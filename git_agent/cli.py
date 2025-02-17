@@ -1,25 +1,23 @@
-from collections import defaultdict
-from pathlib import Path
 from typing import Literal
 from typing_extensions import Annotated
-import git
-import random
 from datetime import datetime, timedelta
-# pip install GitPython
+from pathlib import Path
+import random
 
 import typer
-
+import git
 from loguru import logger
 
+# pip install GitPython
 
 cli = typer.Typer(help="自动填写 commit 信息提交代码")
 
 
 def commit(
-  index: git.IndexFile,
-  action: Literal["add", "rm"],
-  filepath,
-  commit_date: datetime,
+    index: git.IndexFile,
+    action: Literal["add", "rm"],
+    filepath,
+    commit_date: datetime,
 ):
     logger.info(f"commit: {filepath}")
     filepath = Path(filepath)
@@ -50,7 +48,7 @@ def get_commit_dates(start_date, end_date):
     help="自动填写 commit 信息提交代码",
 )
 def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
-    logger.info(f"repo_dir: {repo_dir}")
+    logger.info(f"repo_dir: {Path(repo_dir).absolute()}")
     repo = git.Repo(repo_dir)
     index: git.IndexFile = repo.index
     # 获取最新的提交日期
@@ -67,13 +65,13 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
 
     for line in status.splitlines():
         status_code, file_path = line[:2].strip(), line[3:].strip()
-        if status_code == '??':
+        if status_code == "??":
             untracked_files.append(file_path)
-        elif status_code == 'A':
+        elif status_code == "A":
             added_files.append(file_path)
-        elif status_code == 'M':
+        elif status_code == "M":
             modified_files.append(file_path)
-        elif status_code == 'D':
+        elif status_code == "D":
             deleted_files.append(file_path)
         else:
             logger.warning(f"unknown status code: {status_code}")
@@ -82,14 +80,28 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
     logger.info(f"latest commit date: {latest_commit_date}")
     logger.info(f"today: {today}")
     logger.info(f"commit days: {len(commit_dates)}")
-    logger.info(f"""
-untracked files: {len(untracked_files)}
-added files: {len(added_files)}
-modified files: {len(modified_files)}
-deleted files: {len(deleted_files)}""")
+    msgs = [
+        "Untracked Files:",
+        "\n".join(["? " + str(f) for f in untracked_files]),
+        "",
+        "Added Files:",
+        "\n".join(["+ " + str(f) for f in added_files]),
+        "",
+        "Modified Files:",
+        "\n".join(["o " + str(f) for f in modified_files]),
+        "",
+        "Deleted Files:",
+        "\n".join(["- " + str(f) for f in deleted_files]),
+    ]
+    logger.info("\n\n".join(msgs))
 
     # 从 git log 最新日期到今天，获取所有文件修改信息，随机铺满每一天，使得提交记录完整
-    files_count = len(added_files) + len(modified_files) + len(deleted_files) + len(untracked_files)
+    files_count = (
+        len(added_files)
+        + len(modified_files)
+        + len(deleted_files)
+        + len(untracked_files)
+    )
     days_count = len(commit_dates)
     if files_count > days_count:
         # 自动随机复制date, 使得days_count >= files_count
