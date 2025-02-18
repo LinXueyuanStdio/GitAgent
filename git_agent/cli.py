@@ -80,19 +80,19 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
     logger.info(f"latest commit date: {latest_commit_date}")
     logger.info(f"today: {today}")
     logger.info(f"commit days: {len(commit_dates)}")
-    msgs = [
-        "Untracked Files:",
-        "\n".join(["? " + str(f) for f in untracked_files]),
-        "",
-        "Added Files:",
-        "\n".join(["+ " + str(f) for f in added_files]),
-        "",
-        "Modified Files:",
-        "\n".join(["o " + str(f) for f in modified_files]),
-        "",
-        "Deleted Files:",
-        "\n".join(["- " + str(f) for f in deleted_files]),
-    ]
+    msgs = []
+    if len(untracked_files) > 0:
+        msgs.append("Untracked Files:")
+        msgs.extend([f"? {f}" for f in untracked_files])
+    if len(added_files) > 0:
+        msgs.append("Added Files:")
+        msgs.extend([f"+ {f}" for f in added_files])
+    if len(modified_files) > 0:
+        msgs.append("Modified Files:")
+        msgs.extend([f"o {f}" for f in modified_files])
+    if len(deleted_files) > 0:
+        msgs.append("Deleted Files:")
+        msgs.extend([f"- {f}" for f in deleted_files])
     logger.info("\n\n".join(msgs))
 
     # 从 git log 最新日期到今天，获取所有文件修改信息，随机铺满每一天，使得提交记录完整
