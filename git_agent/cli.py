@@ -34,7 +34,7 @@ def commit(
     else:
         logger.error(f"unknown action: {action}")
         return
-    message = f"chore {action} {filepath}"
+    message = f"chore {action} {Path(filepath).name}"
     index.commit(message, author_date=commit_date, commit_date=commit_date)
     logger.info(f"add and commit: {filepath}")
 
