@@ -21,6 +21,7 @@ def commit(
   filepath,
   commit_date: datetime,
 ):
+    logger.info(f"commit: {filepath}")
     filepath = Path(filepath)
     git_path = filepath / ".git"
     filepath = str(filepath.absolute())
@@ -36,7 +37,6 @@ def commit(
         return
     message = f"chore {action} {Path(filepath).name}"
     index.commit(message, author_date=commit_date, commit_date=commit_date)
-    logger.info(f"add and commit: {filepath}")
 
 
 def get_commit_dates(start_date, end_date):
@@ -50,7 +50,7 @@ def get_commit_dates(start_date, end_date):
     help="自动填写 commit 信息提交代码",
 )
 def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
-    print(repo_dir)
+    logger.info(f"repo_dir: {repo_dir}")
     repo = git.Repo(repo_dir)
     index: git.IndexFile = repo.index
     # 获取最新的提交日期
@@ -79,10 +79,14 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
             logger.warning(f"unknown status code: {status_code}")
 
     # 输出统计结果
-    print("Untracked files:", untracked_files)
-    print("Added files:", added_files)
-    print("Modified files:", modified_files)
-    print("Deleted files:", deleted_files)
+    logger.info(f"latest commit date: {latest_commit_date}")
+    logger.info(f"today: {today}")
+    logger.info(f"commit days: {len(commit_dates)}")
+    logger.info(f"""
+untracked files: {len(untracked_files)}
+added files: {len(added_files)}
+modified files: {len(modified_files)}
+deleted files: {len(deleted_files)}""")
 
     # 从 git log 最新日期到今天，获取所有文件修改信息，随机铺满每一天，使得提交记录完整
     files_count = len(added_files) + len(modified_files) + len(deleted_files) + len(untracked_files)
@@ -117,19 +121,6 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
     for item in untracked_files:
         commit_date = commit_dates.pop()
         commit(index, "add", item, commit_date)
-
-    # for item in index.diff(None):
-    #     filepath = item.a_path
-    #     print(filepath, item.change_type)
-            # index.remove([filepath])
-    # message = f"chore remove"
-    # index.commit(message)
-
-    # for item in index.diff(None):
-    #     filepath = item.a_path
-    #     commit_date = commit_dates.pop()
-    #     commit(index, filepath)
-    #     repo.git.commit('--amend', '--no-edit', '--date', commit_date.isoformat())
 
 
 if __name__ == "__main__":
