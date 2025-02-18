@@ -93,7 +93,7 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
     if len(deleted_files) > 0:
         msgs.append("Deleted Files:")
         msgs.extend([f"- {f}" for f in deleted_files])
-    logger.info("\n\n".join(msgs))
+    logger.info("\n".join(msgs))
 
     # 从 git log 最新日期到今天，获取所有文件修改信息，随机铺满每一天，使得提交记录完整
     files_count = (
