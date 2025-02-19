@@ -1,4 +1,28 @@
 # GitAgent
 Git Agent for git operations automation
 
-从 git log 最新日期到今天，获取所有文件修改信息，随机铺满每一天，使得提交记录完整
+## Installation
+```bash
+pip install oh-my-git-agent
+```
+```bash
+$ gcli --help
+ Usage: gcli [OPTIONS]
+
+ 自动填写 commit 信息提交代码
+
+╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ *  --repo-dir                  TEXT  git 仓库目录 [default: None] [required]                                   │
+│    --install-completion              Install completion for the current shell.                                 │
+│    --show-completion                 Show completion for the current shell, to copy it or customize the        │
+│                                      installation.                                                             │
+│    --help                            Show this message and exit.                                               │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+## Usage
+
+```bash
+gcli --repo-dir .
+git push origin main
+```
