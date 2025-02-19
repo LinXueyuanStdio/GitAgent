@@ -1,6 +1,6 @@
 [tool.poetry]
-name = "git-agent"
-version = "1.0.4"
+name = "oh-my-git-agent"
+version = "1.0.6"
 homepage = "https://github.com/LinXueyuanStdio/GitAgent"
 description = "A simple git agent for managing git repositories"
 authors = ["Xueyuan Lin <linxy59@mail2.sysu.eud.cn>"]
@@ -11,7 +11,7 @@ license = "MIT"
 
 # Only include the out directory of the frontend
 # The order of the include/exclude lists is important!
-include = ["docs/**"]
+include = []
 exclude = []
 
 [tool.poetry.dependencies]
