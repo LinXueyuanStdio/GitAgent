@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "oh-my-git-agent"
-version = "1.0.6"
+version = "1.0.7"
 homepage = "https://github.com/LinXueyuanStdio/GitAgent"
 description = "A simple git agent for managing git repositories"
 authors = ["Xueyuan Lin <linxy59@mail2.sysu.eud.cn>"]
@@ -15,14 +15,10 @@ include = []
 exclude = []
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.9.7 || >3.9.7,<4.0"
-GitPython = "^3.1.44"
-xlin = "0.1.6"
-loguru = "^0.7.2"
-typer = "^0.15.1"
-
-[tool.poetry.group.dev.dependencies]
-watchdog = "^3.0.0"
+GitPython = "*"
+xlin = "*"
+loguru = "*"
+typer = "*"
 
 [tool.poetry.scripts]
 gcli = "git_agent.cli:cli"
