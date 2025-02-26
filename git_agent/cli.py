@@ -20,9 +20,7 @@ def commit(
     commit_date: datetime,
 ):
     logger.info(f"commit: {filepath}")
-    filepath = Path(filepath)
-    git_path = filepath / ".git"
-    filepath = str(filepath.absolute())
+    git_path = Path(filepath) / ".git"
     if git_path.exists() and git_path.is_dir():
         logger.warning(f"skip git directory: {filepath}")
         return
