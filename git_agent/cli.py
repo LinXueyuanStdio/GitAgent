@@ -2,7 +2,7 @@ from typing import Literal
 from typing_extensions import Annotated
 from datetime import datetime, timedelta
 from pathlib import Path
-import random
+import os
 
 import typer
 import git
@@ -13,13 +13,20 @@ from loguru import logger
 cli = typer.Typer(help="自动填写 commit 信息提交代码")
 
 
+commit_client = None
+
+
 def commit(
     index: git.IndexFile,
     action: Literal["add", "rm"],
     filepath,
     commit_date: datetime,
+    ai: bool,
+    api_key: str,
+    base_url: str,
+    model: str,
 ):
-    if filepath.startswith("\"") and filepath.endswith("\""):
+    if filepath.startswith('"') and filepath.endswith('"'):
         filepath = eval(filepath)
     logger.info(f"commit: {filepath}")
     git_path = Path(filepath) / ".git"
@@ -33,7 +40,30 @@ def commit(
     else:
         logger.error(f"unknown action: {action}")
         return
-    message = f"chore {action} {Path(filepath).name}"
+    if not ai:
+        message = f"chore {action} {Path(filepath).name}"
+    else:
+        import openai
+
+        global commit_client
+        if commit_client is None:
+            commit_client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        response = commit_client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Please write a brief but informative commit message for action {action} on {filepath}.",
+                }
+            ],
+            max_tokens=64,
+            n=1,
+            temperature=0.5,
+            stream=False,
+        )
+        message = response.choices[0].message.content
+        if not message:
+            message = f"chore {action} {Path(filepath).name}"
     index.commit(message, author_date=commit_date, commit_date=commit_date)
 
 
@@ -80,7 +110,13 @@ def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[da
     short_help="自动填写 commit 信息提交代码",
     help="自动填写 commit 信息提交代码",
 )
-def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
+def main(
+    repo_dir: Annotated[str, typer.Option(help="git 仓库目录")],
+    ai: Annotated[bool, typer.Option(help="是否使用 AI 填写 commit 信息")] = False,
+    api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
+    base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
+    model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
+):
     logger.info(f"repo_dir: {Path(repo_dir).absolute()}")
     repo = git.Repo(repo_dir)
     index: git.IndexFile = repo.index
@@ -154,7 +190,10 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
     # 输出统计结果
     logger.info(f"latest commit date: {latest_commit_date}")
     logger.info(f"today: {today}")
-    logger.info(f"commit days: {len(commit_dates)} ({'<' if files_count < len(commit_dates) else '>='}{files_count} files)")
+    logger.info(
+        f"commit days: {len(commit_dates)} "
+        f"({'<' if files_count < len(commit_dates) else '>='}{files_count} files)"
+    )
     msgs = []
     if len(untracked_files) > 0:
         msgs.append("Untracked Files:")
@@ -173,19 +212,21 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
     # 处理新增文件
     for item in added_files:
         commit_date = commit_dates.pop()
-        commit(index, "add", item, commit_date)
+        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
     # 处理修改文件
     for item in modified_files:
         commit_date = commit_dates.pop()
-        commit(index, "add", item, commit_date)
+        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
     # 处理删除文件
     for item in deleted_files:
         commit_date = commit_dates.pop()
-        commit(index, "rm", item, commit_date)
+        commit(index, "rm", item, commit_date, ai, api_key, base_url, model)
     # 处理未跟踪文件
     for item in untracked_files:
         commit_date = commit_dates.pop()
-        commit(index, "add", item, commit_date)
+        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
+
+    logger.info("Everything done!")
 
 
 if __name__ == "__main__":
