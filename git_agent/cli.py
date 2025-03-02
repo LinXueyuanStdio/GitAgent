@@ -112,10 +112,10 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
             deleted_files.append(item.a_path)
         else:
             logger.warning(f"unknown change type: {item.change_type}")
-    print(added_files)
-    print(modified_files)
-    print(deleted_files)
-    print(untracked_files)
+    # print(added_files)
+    # print(modified_files)
+    # print(deleted_files)
+    # print(untracked_files)
 
     # 使用git status，统计新增、修改、删除的文件
     # status = repo.git.status(porcelain=True)
@@ -168,7 +168,7 @@ def main(repo_dir: Annotated[str, typer.Option(help="git 仓库目录")]):
     if len(deleted_files) > 0:
         msgs.append("Deleted Files:")
         msgs.extend([f"- {f}" for f in deleted_files])
-    logger.info("\n".join(msgs))
+    logger.info("\n" + "\n".join(msgs))
 
     # 处理新增文件
     for item in added_files:
