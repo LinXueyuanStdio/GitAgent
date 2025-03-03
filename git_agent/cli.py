@@ -64,6 +64,7 @@ def commit(
         message = response.choices[0].message.content
         if not message:
             message = f"chore {action} {Path(filepath).name}"
+    logger.info(f"commit message: {message}")
     index.commit(message, author_date=commit_date, commit_date=commit_date)
 
 
