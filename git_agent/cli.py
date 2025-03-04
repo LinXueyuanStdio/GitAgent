@@ -53,7 +53,7 @@ def commit(
             messages=[
                 {
                     "role": "user",
-                    "content": f"Please write a brief but informative commit message for action {action} on {filepath}.",
+                    "content": f"Please write a brief commit message for action {action} on {filepath}.",
                 }
             ],
             max_tokens=64,
