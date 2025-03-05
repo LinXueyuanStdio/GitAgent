@@ -45,6 +45,7 @@ def commit(
             if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
                 with open(filepath, "r") as f:
                     brief_desc_for_file = f.read()
+        print(brief_desc_for_file)
         if brief_desc_for_file and len(brief_desc_for_file) > 200:
             brief_desc_for_file = brief_desc_for_file[:200]
     elif action == "rm":
