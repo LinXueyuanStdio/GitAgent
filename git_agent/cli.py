@@ -36,7 +36,7 @@ def commit(
     brief_desc_for_file = None
     if action == "add":
         index.add([filepath])
-        diff = index.diff("HEAD", paths=filepath, unified=True)
+        diff = index.diff("HEAD", paths=filepath)
         diff = diff.pop()
         if diff.diff:
             brief_desc_for_file = diff.diff
