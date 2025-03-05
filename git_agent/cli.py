@@ -33,8 +33,20 @@ def commit(
     if git_path.exists() and git_path.is_dir():
         logger.warning(f"skip git directory: {filepath}")
         return
+    brief_desc_for_file = None
     if action == "add":
         index.add([filepath])
+        diff = index.diff("HEAD", paths=filepath, unified=True)
+        diff = diff.pop()
+        if diff.diff:
+            brief_desc_for_file = diff.diff
+        else:
+            path = Path(filepath)
+            if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
+                with open(filepath, "r") as f:
+                    brief_desc_for_file = f.read()
+        if brief_desc_for_file and len(brief_desc_for_file) > 200:
+            brief_desc_for_file = brief_desc_for_file[:200]
     elif action == "rm":
         index.remove([filepath])
     else:
@@ -55,9 +67,10 @@ def commit(
                     "role": "user",
                     "content": f"""\
 Please write a brief commit message for action {action} on {filepath}.
+
 Example:
 🎉 [{action} {filepath}] xxx
-""",
+""" + ('Diff:\n' + brief_desc_for_file if brief_desc_for_file else ''),
                 }
             ],
             max_tokens=64,
