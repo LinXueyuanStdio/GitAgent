@@ -36,18 +36,19 @@ def commit(
     brief_desc_for_file = None
     if action == "add":
         index.add([filepath])
-        diff = index.diff("HEAD", paths=filepath)
+        diff = index.diff("HEAD", paths=filepath, create_patch=True)
         diff = diff.pop()
         if diff.diff:
             brief_desc_for_file = diff.diff
+            if isinstance(brief_desc_for_file, bytes):
+                brief_desc_for_file = brief_desc_for_file.decode("utf-8")
         else:
             path = Path(filepath)
             if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
                 with open(filepath, "r") as f:
                     brief_desc_for_file = f.read()
-        print(brief_desc_for_file)
-        if brief_desc_for_file and len(brief_desc_for_file) > 200:
-            brief_desc_for_file = brief_desc_for_file[:200]
+        if brief_desc_for_file and len(brief_desc_for_file) > 1024:
+            brief_desc_for_file = brief_desc_for_file[:1024]
     elif action == "rm":
         index.remove([filepath])
     else:
