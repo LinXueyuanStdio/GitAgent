@@ -36,7 +36,7 @@ def commit(
     brief_desc_for_file = None
     if action == "add":
         index.add([filepath])
-        diff = index.diff("HEAD", paths=filepath, create_patch=True)
+        diff = index.diff(paths=filepath, create_patch=True)
         if len(diff) > 0:
             diff = diff.pop()
             if diff.diff:
