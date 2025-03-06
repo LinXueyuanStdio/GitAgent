@@ -28,7 +28,7 @@ def commit(
 ):
     if filepath.startswith('"') and filepath.endswith('"'):
         filepath = eval(filepath)
-    logger.info(f"commit: {filepath}")
+    logger.info(f"commit: {filepath} at {commit_date}")
     git_path = Path(filepath) / ".git"
     if git_path.exists() and git_path.is_dir():
         logger.warning(f"skip git directory: {filepath}")
