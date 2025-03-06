@@ -37,11 +37,12 @@ def commit(
     if action == "add":
         index.add([filepath])
         diff = index.diff("HEAD", paths=filepath, create_patch=True)
-        diff = diff.pop()
-        if diff.diff:
-            brief_desc_for_file = diff.diff
-            if isinstance(brief_desc_for_file, bytes):
-                brief_desc_for_file = brief_desc_for_file.decode("utf-8")
+        if len(diff) > 0:
+            diff = diff.pop()
+            if diff.diff:
+                brief_desc_for_file = diff.diff
+                if isinstance(brief_desc_for_file, bytes):
+                    brief_desc_for_file = brief_desc_for_file.decode("utf-8")
         else:
             path = Path(filepath)
             if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
