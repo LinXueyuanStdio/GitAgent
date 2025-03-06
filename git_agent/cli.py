@@ -42,7 +42,7 @@ def commit(
                 brief_desc_for_file = diff.diff
                 if isinstance(brief_desc_for_file, bytes):
                     brief_desc_for_file = brief_desc_for_file.decode("utf-8")
-                print(brief_desc_for_file)
+                logger.debug(f"\n{brief_desc_for_file}")
         else:
             path = Path(filepath)
             if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
