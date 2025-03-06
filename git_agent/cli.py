@@ -2,7 +2,6 @@ from typing import Literal
 from typing_extensions import Annotated
 from datetime import datetime, timedelta
 from pathlib import Path
-import os
 
 import typer
 import git
@@ -35,14 +34,15 @@ def commit(
         return
     brief_desc_for_file = None
     if action == "add":
+        diff = index.diff(None, paths=filepath, create_patch=True)
         index.add([filepath])
-        diff = index.diff(paths=filepath, create_patch=True)
         if len(diff) > 0:
             diff = diff.pop()
             if diff.diff:
                 brief_desc_for_file = diff.diff
                 if isinstance(brief_desc_for_file, bytes):
                     brief_desc_for_file = brief_desc_for_file.decode("utf-8")
+                print(brief_desc_for_file)
         else:
             path = Path(filepath)
             if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
