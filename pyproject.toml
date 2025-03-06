@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "oh-my-git-agent"
-version = "1.0.14"
+version = "1.0.15"
 homepage = "https://github.com/LinXueyuanStdio/GitAgent"
 description = "A simple git agent for managing git repositories"
 authors = ["Xueyuan Lin <linxy59@mail2.sysu.eud.cn>"]
