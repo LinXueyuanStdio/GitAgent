@@ -69,7 +69,7 @@ def commit(
                 {
                     "role": "user",
                     "content": f"""\
-Please write a brief commit message for action {action} on {filepath}.
+Please write a brief commit message in one line for action {action} on {filepath}.
 
 Example:
 🎉 [{action} {filepath}] xxx
