@@ -133,7 +133,7 @@ def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[da
     help="自动填写 commit 信息提交代码",
 )
 def main(
-    repo_dir: Annotated[str, typer.Option(help="git 仓库目录")],
+    repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
     ai: Annotated[bool, typer.Option(help="是否使用 AI 填写 commit 信息")] = False,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
