@@ -231,21 +231,26 @@ def main(
         msgs.extend([f"- {f}" for f in deleted_files])
     logger.info("\n" + "\n".join(msgs))
 
+    commit_dates = commit_dates[::-1]
     # 处理新增文件
     for item in added_files:
         commit_date = commit_dates.pop()
+        logger.info(f"commit_date: {commit_date}")
         commit(index, "add", item, commit_date, ai, api_key, base_url, model)
     # 处理修改文件
     for item in modified_files:
         commit_date = commit_dates.pop()
+        logger.info(f"commit_date: {commit_date}")
         commit(index, "add", item, commit_date, ai, api_key, base_url, model)
     # 处理删除文件
     for item in deleted_files:
         commit_date = commit_dates.pop()
+        logger.info(f"commit_date: {commit_date}")
         commit(index, "rm", item, commit_date, ai, api_key, base_url, model)
     # 处理未跟踪文件
     for item in untracked_files:
         commit_date = commit_dates.pop()
+        logger.info(f"commit_date: {commit_date}")
         commit(index, "add", item, commit_date, ai, api_key, base_url, model)
 
     logger.info("Everything done!")
