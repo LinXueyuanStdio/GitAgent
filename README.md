@@ -2,8 +2,9 @@
 
 ![PyPI](https://img.shields.io/pypi/v/oh-my-git-agent) ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/oh-my-git-agent) ![PyPI - License](https://img.shields.io/pypi/l/oh-my-git-agent)
 
-Git Agent for git operations automation
+Git Agent for git operations automation.
 
+It will commit file by file on day by day, to make sure you have a commit every day.
 
 ![](screenshot.png)
 
