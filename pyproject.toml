@@ -1,11 +1,11 @@
 [tool.poetry]
 name = "oh-my-git-agent"
-version = "1.0.17"
+version = "1.0.18"
 homepage = "https://github.com/LinXueyuanStdio/GitAgent"
 description = "A simple git agent for managing git repositories"
 authors = ["Xueyuan Lin <linxy59@mail2.sysu.eud.cn>"]
 readme = "README.md"
-packages = [ { include = "git_agent", from = "." } ]
+packages = [ { include = "gcli.py", from = "." } ]
 
 license = "MIT"
 
@@ -21,7 +21,7 @@ loguru = "*"
 typer = "*"
 
 [tool.poetry.scripts]
-gcli = "git_agent.cli:cli"
+gcli = "gcli:cli"
 
 [build-system]
 requires = ["poetry-core"]
