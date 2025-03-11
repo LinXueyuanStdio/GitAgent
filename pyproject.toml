@@ -2,7 +2,7 @@
 name = "oh-my-git-agent"
 version = "1.0.18"
 homepage = "https://github.com/LinXueyuanStdio/GitAgent"
-description = "A simple git agent for managing git repositories"
+description = "Git Agent for git operations automation. It will commit file by file on day by day, to make sure you have a commit every day."
 authors = ["Xueyuan Lin <linxy59@mail2.sysu.eud.cn>"]
 readme = "README.md"
 packages = [ { include = "gcli.py", from = "." } ]
