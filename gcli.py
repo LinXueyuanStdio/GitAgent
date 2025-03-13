@@ -15,6 +15,19 @@ cli = typer.Typer(help="自动填写 commit 信息提交代码")
 commit_client = None
 
 
+def is_textual_file(file_path, chunk_size=1024):
+    """通过检查文件内容是否包含空字节或大量非ASCII字符来判断"""
+    with open(file_path, 'rb') as f:
+        chunk = f.read(chunk_size)
+        # 空字节是二进制文件的强指示器
+        if b'\x00' in chunk:
+            return True
+        # 检查非文本字符的比例
+        text_chars = bytearray({7,8,9,10,12,13,27} | set(range(0x20, 0x100)) - {0x7f})
+        non_text = chunk.translate(None, text_chars)
+        return len(non_text) / len(chunk) <= 0.3 if chunk else True
+
+
 def commit(
     index: git.IndexFile,
     action: Literal["add", "rm"],
@@ -27,7 +40,7 @@ def commit(
 ):
     if filepath.startswith('"') and filepath.endswith('"'):
         filepath = eval(filepath)
-    logger.info(f"commit: {filepath} at {commit_date}")
+    logger.info(f"commit {action}: {filepath} at {commit_date}")
     git_path = Path(filepath) / ".git"
     if git_path.exists() and git_path.is_dir():
         logger.warning(f"skip git directory: {filepath}")
@@ -46,8 +59,9 @@ def commit(
         else:
             path = Path(filepath)
             if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
-                with open(filepath, "r") as f:
-                    brief_desc_for_file = f.read()
+                if is_textual_file(filepath):
+                    with open(filepath, "r") as f:
+                        brief_desc_for_file = f.read()
         if brief_desc_for_file and len(brief_desc_for_file) > 1024:
             brief_desc_for_file = brief_desc_for_file[:1024]
     elif action == "rm":
