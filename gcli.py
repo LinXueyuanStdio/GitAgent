@@ -88,6 +88,8 @@ Please write a brief commit message in one line for action {action} on {filepath
 Example:
 🎉 [{action} {filepath}] xxx
 (you can use any emoji)
+
+Directly respond with the commit message without any explanation.
 """ + ('Diff:\n' + brief_desc_for_file if brief_desc_for_file else ''),
                 }
             ],
