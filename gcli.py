@@ -89,7 +89,7 @@ Example:
 🎉 [{action} {filepath}] xxx
 (you can use any emoji)
 
-Directly respond with the commit message without any explanation.
+You MUST directly respond with the commit message without any explanation, starting with the emoji.
 """ + ('Diff:\n' + brief_desc_for_file if brief_desc_for_file else ''),
                 }
             ],
