@@ -1,138 +1,339 @@
-# GitAgent
+# 🤖 GitAgent
 
 ![PyPI version](https://img.shields.io/pypi/v/oh-my-git-agent) ![Supported Python](https://img.shields.io/pypi/pyversions/oh-my-git-agent) ![License](https://img.shields.io/pypi/l/oh-my-git-agent)
 
-## 简介
+> ✨ 让 Git 提交变得简单又智能！自动整理变更、确保每天都有提交记录，还能用 AI 生成有趣的提交信息 🎉
 
-GitAgent 是一个用于自动化 Git 提交的命令行工具。它会按“逐文件、逐日”策略生成提交，帮助你的提交历史保持每日都有提交；并且可选用 AI 自动生成简短、带表情的提交信息。
+![CLI 截图](screenshot.png)
 
-![CLI 截图：列出变更并编号](screenshot.png)
+---
 
-## 安装
+## 📦 安装
+
+一行命令搞定：
 
 ```bash
 pip install oh-my-git-agent
 ```
 
-## 快速开始
+---
+
+## 🚀 快速上手
+
+### 场景 1️⃣：基础提交（无 AI）
+
+最简单的用法，在你的 Git 仓库里直接运行：
 
 ```bash
-# 在当前仓库根目录运行，将逐个文件提交，提交时间均匀分布在最近一次提交与今天之间
+# 💡 自动提交所有变更文件，每个文件单独提交
 gcli
+```
 
-# 指定仓库路径（可以在任意目录运行）
-gcli --repo-dir .
+**效果**：
+- ✅ 自动检测所有新增、修改、删除的文件
+- ✅ 每个文件一个提交，提交时间均匀分布在"最近一次提交"到"现在"之间
+- ✅ 提交信息简洁：`chore add README.md`、`chore rm old.txt` 等
 
-# 提交完后推送到远端
+完成后推送到远端：
+```bash
 git push origin main
 ```
 
-## 生成 AI 提交信息（可选）
+---
 
-默认使用 DeepSeek（兼容 OpenAI 协议）。
+### 场景 2️⃣：使用 AI 生成提交信息（推荐 🌟）
+
+让 AI 帮你写出带 emoji 的有趣提交信息：
+
+#### 使用 DeepSeek（默认，性价比高）
 
 ```bash
-# 使用 DeepSeek（默认 base-url 与模型）
-gcli --ai --api-key sk-your-deepseek-key --repo-dir .
-
-# 使用 OpenAI 官方（需显式指定 base-url 与模型）
-gcli --ai \
-		 --base-url https://api.openai.com/v1 \
-		 --model gpt-4o-mini \
-		 --api-key sk-your-openai-key \
-		 --repo-dir .
+# 🎯 只需要一个 API Key！
+gcli --api-key sk-your-deepseek-key
 ```
 
-注意：
-- 未开启 `--ai` 时，提交信息形如 `chore add filename`/`chore rm filename`。
-- AI 生成时，会优先使用 diff 片段（或小于约 10MB 的文本文件内容前 1024 字节）辅助生成简短信息。
+> 💡 **提示**：DeepSeek 是默认配置，无需指定 `--base-url` 和 `--model`
 
-## 查看与筛选变更
+**生成的提交信息示例**：
+```
+🎉 [add README.md] 添加项目说明文档
+✨ [add src/main.py] 实现核心逻辑功能
+🐛 [add tests/test_main.py] 修复边界条件测试
+🔥 [rm deprecated.py] 移除废弃代码
+```
+
+#### 使用 OpenAI GPT（需要梯子）
 
 ```bash
-# 列出工作区变更并编号（彩色输出）
-gcli --ls
+# 🌐 使用 OpenAI 官方 API
+gcli --api-key sk-your-openai-key \
+     --base-url https://api.openai.com/v1 \
+     --model gpt-4o-mini
+```
 
-# 等价的子命令用法
+#### 使用其他兼容 OpenAI 的服务
+
+```bash
+# 🔧 支持任何兼容 OpenAI 协议的服务
+gcli --api-key your-api-key \
+     --base-url https://your-api-endpoint.com/v1 \
+     --model your-model-name
+```
+
+---
+
+### 场景 3️⃣：查看变更（不提交）
+
+想先看看有哪些文件变更了？
+
+```bash
+# 👀 彩色输出所有变更，带编号
 gcli ls
 ```
 
-仅提交某个文件或目录下的变更：
+**输出示例**：
+```
+Untracked Files:
+?   [  1] new_feature.py
+?   [  2] config.yaml
 
-```bash
-# 仅提交 src/ 目录内的变更（保持逐文件、时间均匀策略）
-gcli only src/ --repo-dir .
+Modified Files:
+o   [  3] src/main.py
+o   [  4] README.md
+
+Deleted Files:
+-   [  5] old_code.py
 ```
 
-## 工作原理（概要）
+颜色说明：
+- 🟡 黄色：未跟踪的新文件
+- 🟢 绿色：已暂存的新增文件
+- 🔵 蓝色：修改的文件
+- 🔴 红色：删除的文件
 
-- 收集工作区的新增、修改、删除、未跟踪文件。
-- 计算“最近一次提交时间”至“当前时间”的时间段，并将本次待提交的文件数量均匀分布在该区间（或按天顺延）。
-- 按时间先后顺序逐文件提交；AI 模式下为每个文件生成一句话提交说明。
-- 默认忽略 `.git/` 目录；对体积较大的文件不会读取全文。
+---
 
-## 命令参考
+### 场景 4️⃣：只提交特定文件或目录
 
-```bash
-$ gcli --help
-
-Usage: gcli [OPTIONS]
-
-	自动填写 commit 信息提交代码
-
-Options:
-	--repo-dir TEXT   git 仓库目录  [default: .]
-	--ls / --no-ls    列出当前工作区变更并编号  [default: no-ls]
-	--ai / --no-ai    是否使用 AI 填写 commit 信息  [default: no-ai]
-	--api-key TEXT    OpenAI API Key  [default: None]
-	--base-url TEXT   OpenAI API URL  [default: https://api.deepseek.com]
-	--model TEXT      OpenAI Model  [default: deepseek-chat]
-	--install-completion  Install completion for the current shell.
-	--show-completion     Show completion for the current shell.
-	--help                Show this message and exit.
-```
-
-子命令：
+有时候你只想提交某个目录的变更：
 
 ```bash
-$ gcli ls --help
-Usage: gcli ls [OPTIONS]
+# 📁 只提交 src/ 目录下的变更
+gcli only src/
 
-	列出当前工作区变更并编号（彩色输出）
+# 📄 只提交单个文件
+gcli only README.md
 
-Options:
-	--repo-dir TEXT  git 仓库目录  [default: .]
-	--help           Show this message and exit.
+# 🤖 配合 AI 使用
+gcli only src/ --api-key sk-your-deepseek-key
 ```
+
+**实际案例**：
+```bash
+# 场景：前端和后端代码都改了，但只想先提交前端
+gcli only frontend/
+
+# 场景：只提交文档更新
+gcli only docs/
+```
+
+---
+
+### 场景 5️⃣：配置管理（避免每次输入 API Key）
+
+#### 保存到本地项目（推荐）
 
 ```bash
-$ gcli only --help
-Usage: gcli only [OPTIONS] TARGET
+# 💾 配置 API Key，只在当前项目生效
+gcli config --api-key sk-your-deepseek-key
 
-	仅提交指定文件或目录下的变更
-
-Arguments:
-	TARGET  目标文件或目录路径，相对或绝对均可  [required]
-
-Options:
-	--repo-dir TEXT  git 仓库目录  [default: .]
-	--ai / --no-ai   是否使用 AI 填写 commit 信息  [default: no-ai]
-	--api-key TEXT   OpenAI API Key  [default: None]
-	--base-url TEXT  OpenAI API URL  [default: https://api.deepseek.com]
-	--model TEXT     OpenAI Model  [default: deepseek-chat]
-	--help           Show this message and exit.
+# 📝 配置完整参数
+gcli config \
+  --api-key sk-your-key \
+  --base-url https://api.deepseek.com \
+  --model deepseek-chat
 ```
 
-## 常见问题（FAQ）
+配置会保存到 `.oh-my-git-agent/config.yaml`，以后直接运行：
+```bash
+gcli  # 自动读取配置，无需再输入 API Key
+```
 
-- OpenAI/DeepSeek 连接失败？请确认 `--base-url` 与 `--model` 是否与供应商匹配，Key 是否有效，网络是否可达。
-- 只想“看变更不提交”？使用 `gcli --ls` 或 `gcli ls`。
-- 如何安装补全？运行 `gcli --install-completion`，然后按提示将补全脚本加载到当前 Shell。
-- 提交信息太长？工具会截断用于生成的上下文（默认最多约 1024 字符）。
+#### 保存到全局配置
 
-## 许可与链接
+```bash
+# 🌍 全局配置，所有项目都能用
+gcli config --api-key sk-your-key --global
 
-- 许可：MIT（见 `LICENSE`）
-- 源码与主页：<https://github.com/LinXueyuanStdio/GitAgent>
-- PyPI：<https://pypi.org/project/oh-my-git-agent/>
+# 查看当前配置
+gcli config --show
+```
 
+**配置优先级**（从高到低）：
+1. 命令行参数：`--api-key`
+2. 本地配置：`./.oh-my-git-agent/config.yaml`
+3. 环境变量：`.env` 文件（`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`）
+4. 全局配置：`~/.oh-my-git-agent/config.yaml`
+
+---
+
+## 💡 使用技巧
+
+### 组合使用
+
+```bash
+# 1️⃣ 先查看有哪些变更
+gcli ls
+
+# 2️⃣ 只提交某个目录
+gcli only src/ --api-key sk-xxx
+
+# 3️⃣ 推送到远端
+git push
+```
+
+### 在不同目录运行
+
+```bash
+# 🏠 不在仓库根目录？指定路径即可
+gcli --repo-dir /path/to/your/repo
+
+# 📍 配合 AI
+gcli --repo-dir ~/projects/myapp --api-key sk-xxx
+```
+
+### 使用 .env 文件（推荐新手）
+
+在项目根目录创建 `.env` 文件：
+
+```bash
+# .env
+OPENAI_API_KEY=sk-your-deepseek-key
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-chat
+```
+
+然后直接运行：
+```bash
+gcli  # 自动读取 .env 配置
+```
+
+---
+
+## 🔍 工作原理
+
+简单来说，GitAgent 会：
+
+1. 📊 **收集变更**：扫描所有新增、修改、删除的文件
+2. ⏰ **计算时间**：从"最近一次提交"到"现在"，均匀分配提交时间
+3. 📝 **逐个提交**：每个文件单独提交，时间间隔自然
+4. 🤖 **AI 增强**：（可选）读取文件 diff 或内容，生成有趣的提交信息
+
+**为什么要均匀分布时间？**
+- 让你的 GitHub 贡献图更好看 🎨
+- 提交历史看起来更自然 📅
+- 避免一次性提交几十个文件 🚀
+
+---
+
+## ❓ 常见问题
+
+<details>
+<summary><b>🔑 我的 API Key 安全吗？</b></summary>
+
+- 配置文件保存在本地，不会上传到 Git
+- 建议使用 `.env` 文件（记得加到 `.gitignore`）
+- 或使用 `gcli config` 命令保存配置
+</details>
+
+<details>
+<summary><b>💸 使用 AI 会很贵吗？</b></summary>
+
+- DeepSeek 非常便宜，每次提交约 0.0001 元（不到 1 分钱）
+- 100 次提交约 1 分钱，1000 次约 1 毛钱
+- OpenAI 会贵一些，建议用 gpt-4o-mini
+</details>
+
+<details>
+<summary><b>🌐 网络连接失败怎么办？</b></summary>
+
+- 检查 `--base-url` 是否正确
+- DeepSeek 无需梯子，直接访问
+- OpenAI 需要梯子，或使用国内中转服务
+- 可以先用 `gcli ls` 测试，不需要网络
+</details>
+
+<details>
+<summary><b>📄 哪些文件会被提交？</b></summary>
+
+- 所有 Git 检测到的变更（包括未跟踪文件）
+- 自动忽略 `.git/` 目录
+- 使用 `gcli ls` 预览哪些文件会被提交
+</details>
+
+<details>
+<summary><b>🎯 能指定提交信息格式吗？</b></summary>
+
+目前 AI 模式使用固定的 Prompt 生成带 emoji 的提交信息。如需自定义，可以：
+- 修改 `gcli.py` 中的 Prompt
+- 或使用非 AI 模式：`gcli`（生成 `chore add xxx`）
+</details>
+
+<details>
+<summary><b>⚡ 命令补全怎么用？</b></summary>
+
+```bash
+# 安装补全
+gcli --install-completion
+
+# 重启终端或重新加载 shell 配置
+source ~/.zshrc  # 或 ~/.bashrc
+```
+</details>
+
+---
+
+## 📚 命令速查
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `gcli` | 提交所有变更 | `gcli` |
+| `gcli ls` | 查看变更列表 | `gcli ls` |
+| `gcli only <path>` | 只提交指定路径 | `gcli only src/` |
+| `gcli config` | 配置管理 | `gcli config --show` |
+| `--api-key` | 指定 API Key | `gcli --api-key sk-xxx` |
+| `--base-url` | 指定 API 地址 | `gcli --base-url https://...` |
+| `--model` | 指定模型 | `gcli --model gpt-4o-mini` |
+| `--repo-dir` | 指定仓库路径 | `gcli --repo-dir ~/myrepo` |
+
+---
+
+## 🔗 相关链接
+
+- 📦 **PyPI**: [oh-my-git-agent](https://pypi.org/project/oh-my-git-agent/)
+- 💻 **GitHub**: [LinXueyuanStdio/GitAgent](https://github.com/LinXueyuanStdio/GitAgent)
+- 📖 **详细配置**: 查看 [CONFIG_USAGE.md](CONFIG_USAGE.md)
+- 📝 **License**: MIT
+
+---
+
+## 🎉 开始使用
+
+```bash
+# 1. 安装
+pip install oh-my-git-agent
+
+# 2. 进入你的 Git 仓库
+cd /path/to/your/repo
+
+# 3. 运行（第一次建议先看看变更）
+gcli ls
+
+# 4. 开始提交
+gcli --api-key sk-your-deepseek-key
+
+# 5. 推送
+git push
+```
+
+**祝你提交愉快！** 🚀✨
