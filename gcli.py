@@ -79,7 +79,7 @@ def print_changes_numbered(
 
     def echo_line(prefix: str, file: str, color):
         nonlocal idx
-        typer.secho(f"{idx:>3}. {prefix} {file}", fg=color)
+        typer.secho(f"{prefix} [{idx:>3}] {file}", fg=color)
         idx += 1
 
     if untracked_files:
