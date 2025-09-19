@@ -1,18 +1,220 @@
-from typing import Literal
+from typing import Literal, Optional
 from typing_extensions import Annotated
 from datetime import datetime, timedelta
 from pathlib import Path
+from abc import ABC, abstractmethod
+import os
 
 import typer
 from typer import colors
 import git
 from loguru import logger
+import yaml
+from dotenv import load_dotenv
 
 # pip install GitPython
 
 cli = typer.Typer(help="自动填写 commit 信息提交代码")
 
 
+# ==================== 配置管理 ====================
+class ConfigManager:
+    """配置管理器，处理多层级配置优先级"""
+
+    GLOBAL_CONFIG_DIR = Path.home() / ".oh-my-git-agent"
+    GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "config.yaml"
+    LOCAL_CONFIG_DIR = Path(".oh-my-git-agent")
+    LOCAL_CONFIG_FILE = LOCAL_CONFIG_DIR / "config.yaml"
+    LOCAL_ENV_FILE = Path(".env")
+
+    @classmethod
+    def get_config(cls, cli_api_key: Optional[str] = None,
+                   cli_base_url: Optional[str] = None,
+                   cli_model: Optional[str] = None) -> dict:
+        """
+        获取配置，优先级：
+        命令行参数 > ./.oh-my-git-agent/config > .env > ~/.oh-my-git-agent/config
+        """
+        config = {
+            "api_key": None,
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat"
+        }
+
+        # 1. 全局配置
+        if cls.GLOBAL_CONFIG_FILE.exists():
+            with open(cls.GLOBAL_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                global_config = yaml.safe_load(f) or {}
+                config.update(global_config)
+
+        # 2. 本地 .env 文件
+        if cls.LOCAL_ENV_FILE.exists():
+            load_dotenv(cls.LOCAL_ENV_FILE)
+            if os.getenv("OPENAI_API_KEY"):
+                config["api_key"] = os.getenv("OPENAI_API_KEY")
+            if os.getenv("OPENAI_BASE_URL"):
+                config["base_url"] = os.getenv("OPENAI_BASE_URL")
+            if os.getenv("OPENAI_MODEL"):
+                config["model"] = os.getenv("OPENAI_MODEL")
+
+        # 3. 本地配置文件
+        if cls.LOCAL_CONFIG_FILE.exists():
+            with open(cls.LOCAL_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                local_config = yaml.safe_load(f) or {}
+                config.update(local_config)
+
+        # 4. 命令行参数（最高优先级）
+        if cli_api_key:
+            config["api_key"] = cli_api_key
+        if cli_base_url:
+            config["base_url"] = cli_base_url
+        if cli_model:
+            config["model"] = cli_model
+
+        return config
+
+    @classmethod
+    def save_config(cls, api_key: Optional[str] = None,
+                   base_url: Optional[str] = None,
+                   model: Optional[str] = None,
+                   global_config: bool = False):
+        """保存配置到文件"""
+        config_file = cls.GLOBAL_CONFIG_FILE if global_config else cls.LOCAL_CONFIG_FILE
+        config_dir = cls.GLOBAL_CONFIG_DIR if global_config else cls.LOCAL_CONFIG_DIR
+
+        # 确保目录存在
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        # 读取现有配置
+        existing_config = {}
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                existing_config = yaml.safe_load(f) or {}
+
+        # 更新配置
+        if api_key:
+            existing_config["api_key"] = api_key
+        if base_url:
+            existing_config["base_url"] = base_url
+        if model:
+            existing_config["model"] = model
+
+        # 写入配置
+        with open(config_file, 'w', encoding='utf-8') as f:
+            yaml.safe_dump(existing_config, f, allow_unicode=True)
+
+        scope = "全局" if global_config else "本地"
+        logger.info(f"配置已保存到{scope}配置文件: {config_file}")
+
+
+# ==================== Commit 抽象类 ====================
+class BaseCommit(ABC):
+    """Commit 基类"""
+
+    def __init__(self, index: git.IndexFile):
+        self.index = index
+
+    @abstractmethod
+    def generate_message(self, action: Literal["add", "rm"],
+                        filepath: str,
+                        brief_desc: Optional[str] = None) -> str:
+        """生成 commit 消息"""
+        pass
+
+    def execute(self, action: Literal["add", "rm"],
+               filepath: str,
+               commit_date: datetime,
+               brief_desc: Optional[str] = None):
+        """执行 commit"""
+        if filepath.startswith('"') and filepath.endswith('"'):
+            filepath = eval(filepath)
+
+        logger.info(f"commit {action}: {filepath} at {commit_date}")
+
+        git_path = Path(filepath) / ".git"
+        if git_path.exists() and git_path.is_dir():
+            logger.warning(f"skip git directory: {filepath}")
+            return
+
+        # 执行 git 操作
+        if action == "add":
+            self.index.add([filepath])
+        elif action == "rm":
+            self.index.remove([filepath])
+        else:
+            logger.error(f"unknown action: {action}")
+            return
+
+        # 生成提交消息
+        message = self.generate_message(action, filepath, brief_desc)
+        logger.info(f"commit message: {message}")
+
+        # 提交
+        self.index.commit(message, author_date=commit_date, commit_date=commit_date)
+
+
+class SimpleCommit(BaseCommit):
+    """简单 Commit，不使用 AI"""
+
+    def generate_message(self, action: Literal["add", "rm"],
+                        filepath: str,
+                        brief_desc: Optional[str] = None) -> str:
+        return f"chore {action} {Path(filepath).name}"
+
+
+class AICommit(BaseCommit):
+    """AI Commit，使用 AI 生成 commit 消息"""
+
+    def __init__(self, index: git.IndexFile, api_key: str, base_url: str, model: str):
+        super().__init__(index)
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+        self._client = None
+
+    @property
+    def client(self):
+        """延迟初始化 OpenAI 客户端"""
+        if self._client is None:
+            import openai
+            self._client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+        return self._client
+
+    def generate_message(self, action: Literal["add", "rm"],
+                        filepath: str,
+                        brief_desc: Optional[str] = None) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""\
+Please write a brief commit message in one line for action {action} on {filepath}.
+
+Example:
+🎉 [{action} {filepath}] xxx
+(you can use any emoji)
+
+You MUST directly respond with the commit message without any explanation, starting with the emoji.
+""" + ('Diff:\n' + brief_desc if brief_desc else ''),
+                    }
+                ],
+                max_tokens=64,
+                n=1,
+                temperature=0.5,
+                stream=False,
+            )
+            message = response.choices[0].message.content
+            if not message:
+                return f"chore {action} {Path(filepath).name}"
+            return message
+        except Exception as e:
+            logger.error(f"AI commit failed: {e}, fallback to simple commit")
+            return f"chore {action} {Path(filepath).name}"
+
+
+# ==================== 原有的工具函数 ====================
 commit_client = None
 
 
@@ -150,27 +352,11 @@ def _filter_changes_by_path(
     return f_added, f_modified, f_deleted, f_untracked
 
 
-def commit(
-    index: git.IndexFile,
-    action: Literal["add", "rm"],
-    filepath,
-    commit_date: datetime,
-    ai: bool,
-    api_key: str,
-    base_url: str,
-    model: str,
-):
-    if filepath.startswith('"') and filepath.endswith('"'):
-        filepath = eval(filepath)
-    logger.info(f"commit {action}: {filepath} at {commit_date}")
-    git_path = Path(filepath) / ".git"
-    if git_path.exists() and git_path.is_dir():
-        logger.warning(f"skip git directory: {filepath}")
-        return
+def get_brief_desc(index: git.IndexFile, action: Literal["add", "rm"], filepath: str) -> Optional[str]:
+    """获取文件的简要描述（用于 AI commit）"""
     brief_desc_for_file = None
     if action == "add":
         diff = index.diff(None, paths=filepath, create_patch=True)
-        index.add([filepath])
         if len(diff) > 0:
             diff = diff.pop()
             if diff.diff:
@@ -180,51 +366,37 @@ def commit(
                 logger.debug(f"\n{brief_desc_for_file}")
         else:
             path = Path(filepath)
-            if path.is_file() and path.stat().st_size < 10_000_000: # 10MB以下
+            if path.is_file() and path.stat().st_size < 10_000_000:  # 10MB以下
                 if is_textual_file(filepath):
                     with open(filepath, "r") as f:
                         brief_desc_for_file = f.read()
         if brief_desc_for_file and len(brief_desc_for_file) > 1024:
             brief_desc_for_file = brief_desc_for_file[:1024]
-    elif action == "rm":
-        index.remove([filepath])
-    else:
-        logger.error(f"unknown action: {action}")
-        return
-    if not ai:
-        message = f"chore {action} {Path(filepath).name}"
-    else:
-        import openai
+    return brief_desc_for_file
 
-        global commit_client
-        if commit_client is None:
-            commit_client = openai.OpenAI(api_key=api_key, base_url=base_url)
-        response = commit_client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"""\
-Please write a brief commit message in one line for action {action} on {filepath}.
 
-Example:
-🎉 [{action} {filepath}] xxx
-(you can use any emoji)
-
-You MUST directly respond with the commit message without any explanation, starting with the emoji.
-""" + ('Diff:\n' + brief_desc_for_file if brief_desc_for_file else ''),
-                }
-            ],
-            max_tokens=64,
-            n=1,
-            temperature=0.5,
-            stream=False,
+def create_committer(index: git.IndexFile, config: dict) -> BaseCommit:
+    """根据配置创建对应的 Committer"""
+    if config.get("api_key"):
+        return AICommit(
+            index=index,
+            api_key=config["api_key"],
+            base_url=config["base_url"],
+            model=config["model"]
         )
-        message = response.choices[0].message.content
-        if not message:
-            message = f"chore {action} {Path(filepath).name}"
-    logger.info(f"commit message: {message}")
-    index.commit(message, author_date=commit_date, commit_date=commit_date)
+    else:
+        return SimpleCommit(index=index)
+
+
+def commit_file(
+    committer: BaseCommit,
+    action: Literal["add", "rm"],
+    filepath: str,
+    commit_date: datetime,
+    brief_desc: Optional[str] = None
+):
+    """执行单个文件的提交"""
+    committer.execute(action, filepath, commit_date, brief_desc)
 
 
 def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[datetime]:
@@ -273,7 +445,6 @@ def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[da
 def main(
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
     ls: Annotated[bool, typer.Option("--ls", help="列出当前工作区变更并编号")] = False,
-    ai: Annotated[bool, typer.Option(help="是否使用 AI 填写 commit 信息")] = False,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
     model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
@@ -353,26 +524,34 @@ def main(
         logger.info("\n" + "\n".join(msgs))
 
     commit_dates = commit_dates[::-1]
+
+    # 获取配置并创建 committer
+    config = ConfigManager.get_config(api_key, base_url, model)
+    committer = create_committer(index, config)
+
     # 处理新增文件
     for item in added_files:
         commit_date = commit_dates.pop()
         logger.info(f"commit_date: {commit_date}")
-        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
+        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+        commit_file(committer, "add", item, commit_date, brief_desc)
     # 处理修改文件
     for item in modified_files:
         commit_date = commit_dates.pop()
         logger.info(f"commit_date: {commit_date}")
-        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
+        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+        commit_file(committer, "add", item, commit_date, brief_desc)
     # 处理删除文件
     for item in deleted_files:
         commit_date = commit_dates.pop()
         logger.info(f"commit_date: {commit_date}")
-        commit(index, "rm", item, commit_date, ai, api_key, base_url, model)
+        commit_file(committer, "rm", item, commit_date, None)
     # 处理未跟踪文件
     for item in untracked_files:
         commit_date = commit_dates.pop()
         logger.info(f"commit_date: {commit_date}")
-        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
+        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+        commit_file(committer, "add", item, commit_date, brief_desc)
 
     logger.info("Everything done!")
 
@@ -421,21 +600,63 @@ def only_cmd(
     commit_dates.sort()
     commit_dates = commit_dates[::-1]
 
+    # 获取配置并创建 committer
+    config = ConfigManager.get_config(api_key, base_url, model)
+    committer = create_committer(index, config)
+
     # 依序提交
     for item in added_files:
         commit_date = commit_dates.pop()
-        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
+        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+        commit_file(committer, "add", item, commit_date, brief_desc)
     for item in modified_files:
         commit_date = commit_dates.pop()
-        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
+        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+        commit_file(committer, "add", item, commit_date, brief_desc)
     for item in deleted_files:
         commit_date = commit_dates.pop()
-        commit(index, "rm", item, commit_date, ai, api_key, base_url, model)
+        commit_file(committer, "rm", item, commit_date, None)
     for item in untracked_files:
         commit_date = commit_dates.pop()
-        commit(index, "add", item, commit_date, ai, api_key, base_url, model)
+        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+        commit_file(committer, "add", item, commit_date, brief_desc)
 
     logger.info("Selected changes committed. ✅")
+
+
+@cli.command("config", help="配置 AI commit 参数（API Key、Base URL、Model）")
+def config_cmd(
+    api_key: Annotated[Optional[str], typer.Option("-k", "--api-key", help="OpenAI API Key")] = None,
+    base_url: Annotated[Optional[str], typer.Option("-u", "--base-url", help="OpenAI API URL")] = None,
+    model: Annotated[Optional[str], typer.Option("-m", "--model", help="OpenAI Model")] = None,
+    global_config: Annotated[bool, typer.Option("-g", "--global", help="保存到全局配置")] = False,
+    show: Annotated[bool, typer.Option("--show", help="显示当前配置")] = False,
+):
+    """配置管理命令"""
+    if show:
+        # 显示当前配置
+        config = ConfigManager.get_config()
+        typer.secho("当前配置:", fg=colors.BRIGHT_BLUE, bold=True)
+        typer.secho(f"  API Key: {config.get('api_key', 'N/A')}", fg=colors.CYAN)
+        typer.secho(f"  Base URL: {config.get('base_url', 'N/A')}", fg=colors.CYAN)
+        typer.secho(f"  Model: {config.get('model', 'N/A')}", fg=colors.CYAN)
+        return
+
+    if not any([api_key, base_url, model]):
+        typer.secho("请至少提供一个配置项: --api-key, --base-url, 或 --model", fg=colors.RED)
+        typer.secho("或使用 --show 查看当前配置", fg=colors.YELLOW)
+        return
+
+    # 保存配置
+    ConfigManager.save_config(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        global_config=global_config
+    )
+
+    scope = "全局" if global_config else "本地"
+    typer.secho(f"✅ 配置已保存到{scope}配置", fg=colors.GREEN)
 
 
 if __name__ == "__main__":
