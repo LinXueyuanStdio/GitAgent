@@ -659,5 +659,20 @@ def config_cmd(
     typer.secho(f"✅ 配置已保存到{scope}配置", fg=colors.GREEN)
 
 
-if __name__ == "__main__":
+def cli_wrapper():
+    """包装器：当不提供子命令时，默认执行 main 命令"""
+    import sys
+
+    # 获取命令行参数
+    args = sys.argv[1:]
+
+    # 如果没有参数，或第一个参数是选项（以 - 开头），则默认执行 main
+    if not args or (args[0].startswith('-') and args[0] not in ['--help', '-h']):
+        # 在参数开头插入 'main'
+        sys.argv.insert(1, 'main')
+
     cli()
+
+
+if __name__ == "__main__":
+    cli_wrapper()
