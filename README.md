@@ -312,7 +312,6 @@ source ~/.zshrc  # 或 ~/.bashrc
 
 - 📦 **PyPI**: [oh-my-git-agent](https://pypi.org/project/oh-my-git-agent/)
 - 💻 **GitHub**: [LinXueyuanStdio/GitAgent](https://github.com/LinXueyuanStdio/GitAgent)
-- 📖 **详细配置**: 查看 [CONFIG_USAGE.md](CONFIG_USAGE.md)
 - 📝 **License**: MIT
 
 ---
