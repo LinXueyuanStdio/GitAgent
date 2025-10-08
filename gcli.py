@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from abc import ABC, abstractmethod
 import os
+import time
 
 import typer
 from typer import colors
@@ -37,7 +38,7 @@ class ConfigManager:
         """
         config = {
             "api_key": None,
-            "base_url": "https://api.deepseek.com",
+            "base_url": "https://api.deepseek.com/v1",
             "model": "deepseek-chat"
         }
 
@@ -657,6 +658,76 @@ def config_cmd(
 
     scope = "全局" if global_config else "本地"
     typer.secho(f"✅ 配置已保存到{scope}配置", fg=colors.GREEN)
+
+
+@cli.command("test-api", help="测试 AI Committer 是否能正常连接并返回响应")
+def test_api_cmd(
+    api_key: Annotated[Optional[str], typer.Option("-k", "--api-key", help="OpenAI API Key")] = None,
+    base_url: Annotated[Optional[str], typer.Option("-u", "--base-url", help="OpenAI API URL")] = None,
+    model: Annotated[Optional[str], typer.Option("-m", "--model", help="OpenAI Model")] = None,
+    instruction: Annotated[Optional[str], typer.Option("-i", "--instruction", help="用于测试的提示词/指令内容")] = None,
+    timeout: Annotated[int, typer.Option(help="请求超时时间（秒）", min=1)] = 20,
+    verbose: Annotated[bool, typer.Option("-v", "--verbose", help="显示更多调试信息")] = False,
+):
+    """尝试调用一次最小聊天补全以验证 API 连通性。
+
+    优先级：命令行参数 > ./.oh-my-git-agent/config > .env > ~/.oh-my-git-agent/config
+    """
+    # 组装配置
+    config = ConfigManager.get_config(cli_api_key=api_key, cli_base_url=base_url, cli_model=model)
+    resolved_key = config.get("api_key")
+    resolved_url = config.get("base_url")
+    resolved_model = config.get("model")
+
+    if verbose:
+        typer.secho("使用配置:", fg=colors.BRIGHT_BLUE, bold=True)
+        typer.secho(f"  base_url: {resolved_url}", fg=colors.CYAN)
+        typer.secho(f"  model:    {resolved_model}", fg=colors.CYAN)
+        typer.secho(f"  api_key:  {'已提供' if resolved_key else '未提供'}", fg=colors.CYAN)
+
+    if not resolved_key:
+        typer.secho("未检测到 API Key。请通过以下任一方式设置:", fg=colors.RED)
+        typer.secho("  1) gcli config --api-key YOUR_KEY", fg=colors.YELLOW)
+        typer.secho("  2) 在 .env 设置 OPENAI_API_KEY", fg=colors.YELLOW)
+        typer.secho("  3) 通过 --api-key 传参", fg=colors.YELLOW)
+        raise typer.Exit(code=1)
+
+    try:
+        import openai
+
+        # 设置请求超时：openai>=1.0 支持在客户端构造时传入超时
+        client = openai.OpenAI(api_key=resolved_key, base_url=resolved_url, timeout=timeout)
+
+        start = time.time()
+        # 若未提供 instruction，使用默认最小回声提示
+        prompt = instruction.strip() if instruction else "Reply with a single word: pong"
+
+        resp = client.chat.completions.create(
+            model=resolved_model,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=8,
+            temperature=0,
+            n=1,
+            stream=False,
+        )
+        elapsed_ms = int((time.time() - start) * 1000)
+        typer.secho(f"Response: {resp}", fg=colors.BRIGHT_BLACK) if verbose else None
+
+        content = (resp.choices[0].message.content or "").strip()
+        typer.secho(
+            f"✅ AI API 连接成功 | {elapsed_ms}ms\n  base_url: {resolved_url}\n  model:    {resolved_model}\n  prompt:   {prompt}\n  reply:    {content}",
+            fg=colors.GREEN,
+        )
+    except ImportError:
+        typer.secho("未找到 openai 库，请先安装依赖: pip install openai", fg=colors.RED)
+    except Exception as e:
+        typer.secho("❌ AI API 连通性测试失败", fg=colors.RED, bold=True)
+        typer.secho(f"  base_url: {resolved_url}", fg=colors.BRIGHT_BLACK)
+        typer.secho(f"  model:    {resolved_model}", fg=colors.BRIGHT_BLACK)
+        typer.secho(f"  错误信息: {e}", fg=colors.YELLOW)
+        typer.secho("请检查: API Key 是否有效、Base URL 是否正确、模型名称是否可用以及网络连通性。", fg=colors.BRIGHT_BLACK)
 
 
 def cli_wrapper():
