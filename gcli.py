@@ -129,7 +129,7 @@ class BaseCommit(ABC):
         if filepath.startswith('"') and filepath.endswith('"'):
             filepath = eval(filepath)
 
-        logger.info(f"commit {action}: {filepath} at {commit_date}")
+        logger.info(f"[{action}] committing {filepath} at {commit_date}")
 
         git_path = Path(filepath) / ".git"
         if git_path.exists() and git_path.is_dir():
