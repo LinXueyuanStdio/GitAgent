@@ -39,7 +39,8 @@ class ConfigManager:
         config = {
             "api_key": None,
             "base_url": "https://api.deepseek.com/v1",
-            "model": "deepseek-chat"
+            "model": "deepseek-chat",
+            "auto_push": False,
         }
 
         # 1. 全局配置
@@ -78,6 +79,7 @@ class ConfigManager:
     def save_config(cls, api_key: Optional[str] = None,
                    base_url: Optional[str] = None,
                    model: Optional[str] = None,
+                   auto_push: Optional[bool] = None,
                    global_config: bool = False):
         """保存配置到文件"""
         config_file = cls.GLOBAL_CONFIG_FILE if global_config else cls.LOCAL_CONFIG_FILE
@@ -99,13 +101,15 @@ class ConfigManager:
             existing_config["base_url"] = base_url
         if model:
             existing_config["model"] = model
+        if auto_push is not None:
+            existing_config["auto_push"] = bool(auto_push)
 
         # 写入配置
         with open(config_file, 'w', encoding='utf-8') as f:
             yaml.safe_dump(existing_config, f, allow_unicode=True)
 
         scope = "全局" if global_config else "本地"
-        logger.info(f"配置已保存到{scope}配置文件: {config_file}")
+        print(f"配置已保存到{scope}配置文件: {config_file}")
 
 
 # ==================== Commit 抽象类 ====================
@@ -265,6 +269,32 @@ def collect_changes(repo: git.Repo):
             logger.warning(f"unknown change type: {item.change_type}")
 
     return added_files, modified_files, deleted_files, untracked_files
+
+
+def _auto_push_if_enabled(repo: git.Repo, enabled: bool):
+    """若开启自动推送，则将当前分支推送到 origin 同名分支。"""
+    if not enabled:
+        return
+    try:
+        # 当前分支名
+        try:
+            branch = repo.active_branch.name
+        except Exception:
+            logger.warning("当前处于 detached HEAD 状态，跳过自动推送。")
+            return
+
+        # 远程 origin 检查
+        remote_names = [r.name for r in repo.remotes]
+        if "origin" not in remote_names:
+            logger.warning("未发现名为 origin 的远程仓库，跳过自动推送。")
+            return
+
+        logger.info(f"开始自动推送: git push origin {branch}")
+        # 使用 GitPython 执行 push
+        repo.git.push("origin", branch)
+        logger.info("自动推送完成 ✅")
+    except Exception as e:
+        logger.error(f"自动推送失败: {e}")
 
 
 def print_changes_numbered(
@@ -554,6 +584,9 @@ def main(
         brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
         commit_file(committer, "add", item, commit_date, brief_desc)
 
+    # 自动推送（若开启）
+    _auto_push_if_enabled(repo, config.get("auto_push", False))
+
     logger.info("Everything done!")
 
 
@@ -622,6 +655,9 @@ def only_cmd(
         brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
         commit_file(committer, "add", item, commit_date, brief_desc)
 
+    # 自动推送（若开启）
+    _auto_push_if_enabled(repo, config.get("auto_push", False))
+
     logger.info("Selected changes committed. ✅")
 
 
@@ -630,6 +666,7 @@ def config_cmd(
     api_key: Annotated[Optional[str], typer.Option("-k", "--api-key", help="OpenAI API Key")] = None,
     base_url: Annotated[Optional[str], typer.Option("-u", "--base-url", help="OpenAI API URL")] = None,
     model: Annotated[Optional[str], typer.Option("-m", "--model", help="OpenAI Model")] = None,
+    auto_push: Annotated[Optional[bool], typer.Option("--auto-push/--no-auto-push", help="是否在提交后自动执行 git push origin <当前分支>")] = None,
     global_config: Annotated[bool, typer.Option("-g", "--global", help="保存到全局配置")] = False,
     show: Annotated[bool, typer.Option("--show", help="显示当前配置")] = False,
 ):
@@ -641,9 +678,10 @@ def config_cmd(
         typer.secho(f"  API Key: {config.get('api_key', 'N/A')}", fg=colors.CYAN)
         typer.secho(f"  Base URL: {config.get('base_url', 'N/A')}", fg=colors.CYAN)
         typer.secho(f"  Model: {config.get('model', 'N/A')}", fg=colors.CYAN)
+        typer.secho(f"  Auto Push: {config.get('auto_push', False)}", fg=colors.CYAN)
         return
 
-    if not any([api_key, base_url, model]):
+    if not any([api_key, base_url, model, auto_push is not None]):
         typer.secho("请至少提供一个配置项: --api-key, --base-url, 或 --model", fg=colors.RED)
         typer.secho("或使用 --show 查看当前配置", fg=colors.YELLOW)
         return
@@ -653,6 +691,7 @@ def config_cmd(
         api_key=api_key,
         base_url=base_url,
         model=model,
+        auto_push=auto_push,
         global_config=global_config
     )
 
