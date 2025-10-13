@@ -52,12 +52,17 @@ class ConfigManager:
         # 2. 本地 .env 文件
         if cls.LOCAL_ENV_FILE.exists():
             load_dotenv(cls.LOCAL_ENV_FILE)
-            if os.getenv("OPENAI_API_KEY"):
-                config["api_key"] = os.getenv("OPENAI_API_KEY")
-            if os.getenv("OPENAI_BASE_URL"):
-                config["base_url"] = os.getenv("OPENAI_BASE_URL")
-            if os.getenv("OPENAI_MODEL"):
-                config["model"] = os.getenv("OPENAI_MODEL")
+            # 优先读取带前缀的变量，避免与其他项目冲突；同时兼容历史的无前缀变量
+            api_key = os.getenv("GITAGENT_API_KEY")
+            base_url = os.getenv("GITAGENT_BASE_URL")
+            model = os.getenv("GITAGENT_MODEL")
+
+            if api_key:
+                config["api_key"] = api_key
+            if base_url:
+                config["base_url"] = base_url
+            if model:
+                config["model"] = model
 
         # 3. 本地配置文件
         if cls.LOCAL_CONFIG_FILE.exists():
@@ -727,7 +732,7 @@ def test_api_cmd(
     if not resolved_key:
         typer.secho("未检测到 API Key。请通过以下任一方式设置:", fg=colors.RED)
         typer.secho("  1) gcli config --api-key YOUR_KEY", fg=colors.YELLOW)
-        typer.secho("  2) 在 .env 设置 OPENAI_API_KEY", fg=colors.YELLOW)
+        typer.secho("  2) 在 .env 设置 GITAGENT_API_KEY", fg=colors.YELLOW)
         typer.secho("  3) 通过 --api-key 传参", fg=colors.YELLOW)
         raise typer.Exit(code=1)
 
