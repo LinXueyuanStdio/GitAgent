@@ -172,7 +172,7 @@ gcli config --show
 **配置优先级**（从高到低）：
 1. 命令行参数：`--api-key`
 2. 本地配置：`./.oh-my-git-agent/config.yaml`
-3. 环境变量：`.env` 文件（`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`）
+3. 环境变量：`.env` 文件（优先 `GITAGENT_OPENAI_API_KEY`、`GITAGENT_OPENAI_BASE_URL`、`GITAGENT_OPENAI_MODEL`，兼容 `OPENAI_*`）
 4. 全局配置：`~/.oh-my-git-agent/config.yaml`
 
 ---
@@ -204,13 +204,18 @@ gcli --repo-dir ~/projects/myapp --api-key sk-xxx
 
 ### 使用 .env 文件（推荐新手）
 
-在项目根目录创建 `.env` 文件：
+在项目根目录创建 `.env` 文件（推荐使用带前缀，避免与其他项目冲突）：
 
 ```bash
-# .env
-OPENAI_API_KEY=sk-your-deepseek-key
-OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-chat
+# .env (推荐)
+GITAGENT_OPENAI_API_KEY=sk-your-deepseek-key
+GITAGENT_OPENAI_BASE_URL=https://api.deepseek.com
+GITAGENT_OPENAI_MODEL=deepseek-chat
+
+# 向后兼容（不推荐）：
+# OPENAI_API_KEY=sk-your-deepseek-key
+# OPENAI_BASE_URL=https://api.deepseek.com
+# OPENAI_MODEL=deepseek-chat
 ```
 
 然后直接运行：
