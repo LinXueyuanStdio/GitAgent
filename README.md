@@ -5,6 +5,7 @@
 > ✨ 让 Git 提交变得简单又智能！自动整理变更、确保每天都有提交记录，还能用 AI 生成有趣的提交信息 🎉
 
 ![CLI 截图](screenshot.png)
+![CLI 截图](screenshot2.png)
 
 ---
 
