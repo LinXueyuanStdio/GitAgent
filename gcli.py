@@ -663,9 +663,9 @@ def ls_cmd(
     print_changes_numbered(added_files, modified_files, deleted_files, untracked_files)
 
 
-@cli.command("only", help="仅提交指定文件或目录下的变更")
+@cli.command("only", help="仅提交指定文件或目录下的变更（支持多个路径）")
 def only_cmd(
-    target: Annotated[str, typer.Argument(help="目标文件或目录路径，相对或绝对均可")],
+    targets: Annotated[list[str], typer.Argument(help="一个或多个目标文件或目录路径，相对或绝对均可", metavar="TARGET...")],
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
     ai: Annotated[Optional[bool], typer.Option("--ai/--no-ai", help="是否使用 AI 填写 commit 信息")] = None,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
@@ -677,10 +677,39 @@ def only_cmd(
     repo_root = Path(repo.working_tree_dir)
 
     added_files, modified_files, deleted_files, untracked_files = collect_changes(repo)
-    # 过滤只保留目标路径内的变更
-    added_files, modified_files, deleted_files, untracked_files = _filter_changes_by_path(
-        repo_root, target, added_files, modified_files, deleted_files, untracked_files
-    )
+    # 参数校验
+    if not targets:
+        typer.secho("未提供任何目标路径。", fg=colors.RED)
+        return
+
+    # 过滤：支持多个目标，聚合并去重（保留首次出现顺序）
+    agg_added: list[str] = []
+    agg_modified: list[str] = []
+    agg_deleted: list[str] = []
+    agg_untracked: list[str] = []
+
+    for target in targets:
+        fa, fm, fd, fu = _filter_changes_by_path(
+            repo_root, target, added_files, modified_files, deleted_files, untracked_files
+        )
+        agg_added.extend(fa)
+        agg_modified.extend(fm)
+        agg_deleted.extend(fd)
+        agg_untracked.extend(fu)
+
+    def _dedup_preserve(items: list[str]) -> list[str]:
+        seen = set()
+        out = []
+        for x in items:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+
+    added_files = _dedup_preserve(agg_added)
+    modified_files = _dedup_preserve(agg_modified)
+    deleted_files = _dedup_preserve(agg_deleted)
+    untracked_files = _dedup_preserve(agg_untracked)
 
     if not (added_files or modified_files or deleted_files or untracked_files):
         typer.secho("目标路径下无待提交变更。", fg=colors.BRIGHT_BLACK)
