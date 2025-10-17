@@ -228,17 +228,39 @@ You MUST directly respond with the commit message without any explanation, start
 commit_client = None
 
 
-def is_textual_file(file_path, chunk_size=1024):
-    """通过检查文件内容是否包含空字节或大量非ASCII字符来判断"""
-    with open(file_path, 'rb') as f:
-        chunk = f.read(chunk_size)
-        # 空字节是二进制文件的强指示器
-        if b'\x00' in chunk:
-            return True
-        # 检查非文本字符的比例
-        text_chars = bytearray({7,8,9,10,12,13,27} | set(range(0x20, 0x100)) - {0x7f})
-        non_text = chunk.translate(None, text_chars)
-        return len(non_text) / len(chunk) <= 0.3 if chunk else True
+def is_textual_file(file_path: str, chunk_size: int = 2048) -> bool:
+    """判断文件是否为文本文件。
+
+    策略：
+    - 读取头部少量字节；若含有空字节(\x00)则视为二进制。
+    - 允许常见空白控制字符与可打印 ASCII；统计非文本字符比例，超过阈值视为二进制。
+    - 对空文件返回 True（当作文本）。
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            chunk = f.read(chunk_size)
+    except Exception:
+        # 读取异常时，保守认为非文本，避免后续按文本方式读取
+        return False
+
+    if not chunk:
+        return True
+
+    # 空字节强指示器：存在则判定为二进制
+    if b"\x00" in chunk:
+        return False
+
+    # 优先尝试 UTF-8 严格解码：能完整解码即认为是文本（支持中文等非 ASCII）
+    try:
+        chunk.decode("utf-8", errors="strict")
+        return True
+    except UnicodeDecodeError:
+        pass
+
+    # 回退策略：基于 ASCII 可打印字符比例的启发式判断
+    text_chars = set([7, 8, 9, 10, 12, 13, 27]) | set(range(0x20, 0x7F))
+    non_text_count = sum(1 for b in chunk if b not in text_chars)
+    return (non_text_count / len(chunk)) <= 0.30
 
 
 def collect_changes(repo: git.Repo):
@@ -389,25 +411,50 @@ def _filter_changes_by_path(
 
 
 def get_brief_desc(index: git.IndexFile, action: Literal["add", "rm"], filepath: str) -> Optional[str]:
-    """获取文件的简要描述（用于 AI commit）"""
-    brief_desc_for_file = None
+    """获取文件的简要描述（用于 AI commit）
+
+    注意：
+    - 对于二进制文件（如图片、压缩包），不读取内容，返回 None，让上层只传文件名给 AI。
+    - 文本读取使用 UTF-8 并忽略无法解码的字符，避免 UnicodeDecodeError。
+    """
+    brief_desc_for_file: Optional[str] = None
+
     if action == "add":
-        diff = index.diff(None, paths=filepath, create_patch=True)
+        # 优先尝试 diff（适用于已被索引跟踪的改动）
+        try:
+            diff = index.diff(None, paths=filepath, create_patch=True)
+        except Exception:
+            diff = []
+
         if len(diff) > 0:
-            diff = diff.pop()
-            if diff.diff:
-                brief_desc_for_file = diff.diff
-                if isinstance(brief_desc_for_file, bytes):
-                    brief_desc_for_file = brief_desc_for_file.decode("utf-8")
-                logger.debug(f"\n{brief_desc_for_file}")
+            d = diff.pop()
+            if getattr(d, 'diff', None):
+                content = d.diff
+                if isinstance(content, bytes):
+                    try:
+                        content = content.decode("utf-8", errors="ignore")
+                    except Exception:
+                        content = None
+                brief_desc_for_file = content
+                if brief_desc_for_file:
+                    logger.debug(f"\n{brief_desc_for_file}")
         else:
+            # 未有 diff 时，对小文本文件读取部分内容
             path = Path(filepath)
-            if path.is_file() and path.stat().st_size < 10_000_000:  # 10MB以下
+            if path.is_file() and path.stat().st_size < 10_000_000:  # 10MB 以下
                 if is_textual_file(filepath):
-                    with open(filepath, "r") as f:
-                        brief_desc_for_file = f.read()
+                    try:
+                        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                            brief_desc_for_file = f.read(2048)
+                    except Exception:
+                        brief_desc_for_file = None
+                else:
+                    # 二进制文件：不读取内容，由调用者仅传文件名
+                    brief_desc_for_file = None
+
         if brief_desc_for_file and len(brief_desc_for_file) > 1024:
             brief_desc_for_file = brief_desc_for_file[:1024]
+
     return brief_desc_for_file
 
 
