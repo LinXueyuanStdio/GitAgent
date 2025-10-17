@@ -528,6 +528,7 @@ def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[da
 def main(
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
     ls: Annotated[bool, typer.Option("--ls", help="列出当前工作区变更并编号")] = False,
+    ai: Annotated[Optional[bool], typer.Option("--ai/--no-ai", help="是否使用 AI 填写 commit 信息")] = None,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
     model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
@@ -608,9 +609,20 @@ def main(
 
     commit_dates = commit_dates[::-1]
 
-    # 获取配置并创建 committer
+    # 获取配置并创建 committer（--ai 显式覆盖配置逻辑）
     config = ConfigManager.get_config(api_key, base_url, model)
-    committer = create_committer(index, config)
+    if ai is True:
+        if not config.get("api_key"):
+            typer.secho("已指定 --ai，但未检测到 API Key。请通过以下任一方式设置:", fg=colors.RED)
+            typer.secho("  1) gcli config --api-key YOUR_KEY", fg=colors.YELLOW)
+            typer.secho("  2) 在 .env 设置 GITAGENT_API_KEY", fg=colors.YELLOW)
+            typer.secho("  3) 通过 --api-key 传参", fg=colors.YELLOW)
+            raise typer.Exit(code=1)
+        committer = AICommit(index=index, api_key=config["api_key"], base_url=config["base_url"], model=config["model"])
+    elif ai is False:
+        committer = SimpleCommit(index=index)
+    else:
+        committer = create_committer(index, config)
 
     # 处理新增文件
     for item in added_files:
@@ -655,7 +667,7 @@ def ls_cmd(
 def only_cmd(
     target: Annotated[str, typer.Argument(help="目标文件或目录路径，相对或绝对均可")],
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
-    ai: Annotated[bool, typer.Option(help="是否使用 AI 填写 commit 信息")] = False,
+    ai: Annotated[Optional[bool], typer.Option("--ai/--no-ai", help="是否使用 AI 填写 commit 信息")] = None,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
     model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
@@ -686,9 +698,20 @@ def only_cmd(
     commit_dates.sort()
     commit_dates = commit_dates[::-1]
 
-    # 获取配置并创建 committer
+    # 获取配置并创建 committer（--ai 显式覆盖配置逻辑）
     config = ConfigManager.get_config(api_key, base_url, model)
-    committer = create_committer(index, config)
+    if ai is True:
+        if not config.get("api_key"):
+            typer.secho("已指定 --ai，但未检测到 API Key。请通过以下任一方式设置:", fg=colors.RED)
+            typer.secho("  1) gcli config --api-key YOUR_KEY", fg=colors.YELLOW)
+            typer.secho("  2) 在 .env 设置 GITAGENT_API_KEY", fg=colors.YELLOW)
+            typer.secho("  3) 通过 --api-key 传参", fg=colors.YELLOW)
+            raise typer.Exit(code=1)
+        committer = AICommit(index=index, api_key=config["api_key"], base_url=config["base_url"], model=config["model"])
+    elif ai is False:
+        committer = SimpleCommit(index=index)
+    else:
+        committer = create_committer(index, config)
 
     # 依序提交
     for item in added_files:
