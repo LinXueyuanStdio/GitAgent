@@ -700,7 +700,7 @@ def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[da
 def main(
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
     ls: Annotated[bool, typer.Option("--ls", help="列出当前工作区变更并编号")] = False,
-    multi_files: Annotated[bool, typer.Option("-m", "--multi-files", help="将所有文件合并为一个 commit")] = False,
+    one_commit: Annotated[bool, typer.Option("-m", "--one-commit", help="将所有文件合并为一个 commit")] = False,
     staging: Annotated[bool, typer.Option("--staging/--no-staging", help="是否自动将未暂存变更加入暂存区",)] = True,
     ai: Annotated[Optional[bool], typer.Option("--ai/--no-ai", help="是否使用 AI 填写 commit 信息")] = None,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
@@ -838,8 +838,8 @@ def main(
             typer.secho("无已暂存变更。使用 --staging 以自动暂存并提交。", fg=colors.BRIGHT_BLACK)
             return
 
-    # 批量提交模式
-    if multi_files:
+    # 批量提交模式（one commit）
+    if one_commit:
         files_info = []
         # added (含 modified/untracked 合并) -> action add
         for item in commit_added:
@@ -891,7 +891,7 @@ def ls_cmd(
 def only_cmd(
     targets: Annotated[list[str], typer.Argument(help="一个或多个目标文件或目录路径，相对或绝对均可", metavar="TARGET...")],
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
-    multi_files: Annotated[bool, typer.Option("-m", "--multi-files", help="将所有文件合并为一个 commit")] = False,
+    one_commit: Annotated[bool, typer.Option("-m", "--one-commit", help="将所有文件合并为一个 commit")] = False,
     staging: Annotated[bool, typer.Option("--staging/--no-staging", help="是否自动将未暂存变更加入暂存区",)] = True,
     ai: Annotated[Optional[bool], typer.Option("--ai/--no-ai", help="是否使用 AI 填写 commit 信息")] = None,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
@@ -1027,7 +1027,7 @@ def only_cmd(
             typer.secho("目标路径下无已暂存变更。使用 --staging 以自动暂存。", fg=colors.BRIGHT_BLACK)
             return
 
-    if multi_files:
+    if one_commit:
         files_info = []
         for item in commit_added:
             brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None

@@ -2,7 +2,7 @@
 
 ## 功能概述
 
-新增 `-m/--multi-files` 参数，允许将多个文件合并为一个 commit 提交，而不是每个文件单独生成一个 commit。
+新增 `-m/--one-commit` 参数，允许将多个文件合并为一个 commit 提交，而不是每个文件单独生成一个 commit。
 
 ## 使用方法
 
@@ -16,7 +16,7 @@ python gcli.py main -m
 python gcli.py main -m --ai
 
 # 或者使用完整参数名
-python gcli.py main --multi-files --ai
+python gcli.py main --one-commit --ai
 ```
 
 ### 2. only 命令

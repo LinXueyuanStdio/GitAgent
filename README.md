@@ -32,7 +32,7 @@ gcli ls
 
 # 5. 一键提交
 # 5.1 指定变更，一个 commit
-gcli only src/ tests/ --multi-files
+gcli only src/ tests/ --one-commit
 # 5.2 提交所有变更，每个文件一个 commit
 gcli
 # 5.3 手动添加文件到暂存区，再提交一个 commit
@@ -200,17 +200,17 @@ gcli config --show
 4. 全局配置：`~/.oh-my-git-agent/config.yaml`
 
 
-## 场景 6️⃣：合并多个文件为一个提交（新增 -m/--multi-files 参数）
+## 场景 6️⃣：合并多个文件为一个提交（新增 -m/--one-commit 参数）
 
-有时候你可能希望将多个文件的变更合并为一个提交，而不是每个文件单独提交。现在你可以使用 `-m/--multi-files` 参数来实现这一点。
+有时候你可能希望将多个文件的变更合并为一个提交，而不是每个文件单独提交。现在你可以使用 `-m/--one-commit` 参数来实现这一点。
 
 ```bash
 # 将所有变更文件合并为一个 commit
 gcli -m
 gcli only src/ -m
 # 或
-gcli --multi-files
-gcli only src/ --multi-files
+gcli --one-commit
+gcli only src/ --one-commit
 ```
 
 ## 场景 7️⃣：手动添加文件到暂存区，再使用 GitAgent 提交
@@ -360,7 +360,7 @@ source ~/.zshrc  # 或 ~/.bashrc
 | `--base-url` | 指定 API 地址 | `gcli --base-url https://...` |
 | `--model` | 指定模型 | `gcli --model gpt-4o-mini` |
 | `--repo-dir` | 指定仓库路径 | `gcli --repo-dir ~/myrepo` |
-| `-m/--multi-files` | 多文件合并为一个提交 | `gcli -m` |
+| `-m/--one-commit` | 多文件合并为一个提交 | `gcli -m` |
 | `--no-staging` | 只提交已暂存文件 | `gcli --no-staging` |
 
 ---

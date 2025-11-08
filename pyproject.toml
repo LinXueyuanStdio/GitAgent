@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "oh-my-git-agent"
-version = "1.1.1"
+version = "1.1.2"
 homepage = "https://github.com/LinXueyuanStdio/GitAgent"
 description = "Git Agent for git operations automation. It will commit file by file on day by day, to make sure you have a commit every day."
 authors = ["Xueyuan Lin <linxy59@mail2.sysu.eud.cn>"]
