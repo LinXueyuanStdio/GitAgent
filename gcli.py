@@ -131,10 +131,20 @@ class BaseCommit(ABC):
         """生成 commit 消息"""
         pass
 
+    @abstractmethod
+    def generate_batch_message(self, files_info: list[dict]) -> str:
+        """生成批量提交消息
+
+        Args:
+            files_info: 文件信息列表，每个元素包含 {"action": "add"/"rm", "filepath": str, "brief_desc": Optional[str]}
+        """
+        pass
+
     def execute(self, action: Literal["add", "rm"],
                filepath: str,
                commit_date: datetime,
-               brief_desc: Optional[str] = None):
+               brief_desc: Optional[str] = None,
+               skip_stage: bool = False):
         """执行 commit"""
         if filepath.startswith('"') and filepath.endswith('"'):
             filepath = eval(filepath)
@@ -146,17 +156,60 @@ class BaseCommit(ABC):
             logger.warning(f"skip git directory: {filepath}")
             return
 
-        # 执行 git 操作
-        if action == "add":
-            self.index.add([filepath])
-        elif action == "rm":
-            self.index.remove([filepath])
-        else:
-            logger.error(f"unknown action: {action}")
-            return
+        # 执行 git 操作（若未标记跳过暂存）
+        if not skip_stage:
+            if action == "add":
+                self.index.add([filepath])
+            elif action == "rm":
+                self.index.remove([filepath])
+            else:
+                logger.error(f"unknown action: {action}")
+                return
 
         # 生成提交消息
         message = self.generate_message(action, filepath, brief_desc)
+        logger.info(f"commit message: {message}")
+
+        # 提交
+        self.index.commit(message, author_date=commit_date, commit_date=commit_date)
+
+    def execute_batch(self, files_info: list[dict], commit_date: datetime):
+        """批量执行 commit
+
+        Args:
+            files_info: 文件信息列表，每个元素包含 {"action": "add"/"rm", "filepath": str, "brief_desc": Optional[str]}
+            commit_date: 提交日期
+        """
+        if not files_info:
+            return
+
+        logger.info(f"[batch] committing {len(files_info)} files at {commit_date}")
+
+        # 执行所有 git 操作
+        for info in files_info:
+            filepath = info["filepath"]
+            action = info["action"]
+            skip_stage = info.get("skip_stage", False)
+
+            if filepath.startswith('"') and filepath.endswith('"'):
+                filepath = eval(filepath)
+
+            git_path = Path(filepath) / ".git"
+            if git_path.exists() and git_path.is_dir():
+                logger.warning(f"skip git directory: {filepath}")
+                continue
+
+            if not skip_stage:
+                if action == "add":
+                    self.index.add([filepath])
+                elif action == "rm":
+                    self.index.remove([filepath])
+                else:
+                    logger.error(f"unknown action: {action}")
+                    continue
+
+        # 生成批量提交消息
+        message = self.generate_batch_message(files_info)
         logger.info(f"commit message: {message}")
 
         # 提交
@@ -170,6 +223,17 @@ class SimpleCommit(BaseCommit):
                         filepath: str,
                         brief_desc: Optional[str] = None) -> str:
         return f"chore {action} {Path(filepath).name}"
+
+    def generate_batch_message(self, files_info: list[dict]) -> str:
+        """生成批量提交消息"""
+        file_count = len(files_info)
+        actions = set(info["action"] for info in files_info)
+
+        if len(actions) == 1:
+            action = actions.pop()
+            return f"chore {action} {file_count} files"
+        else:
+            return f"chore update {file_count} files"
 
 
 class AICommit(BaseCommit):
@@ -223,6 +287,56 @@ You MUST directly respond with the commit message without any explanation, start
             logger.error(f"AI commit failed: {e}, fallback to simple commit")
             return f"chore {action} {Path(filepath).name}"
 
+    def generate_batch_message(self, files_info: list[dict]) -> str:
+        """生成批量提交消息"""
+        try:
+            # 构建文件列表描述
+            file_list = []
+            for info in files_info:
+                action = info["action"]
+                filepath = info["filepath"]
+                brief_desc = info.get("brief_desc")
+
+                if brief_desc:
+                    file_list.append(f"[{action}] {filepath}:\n{brief_desc[:200]}...")
+                else:
+                    file_list.append(f"[{action}] {filepath}")
+
+            files_desc = "\n".join(file_list[:10])  # 最多展示10个文件
+            if len(file_list) > 10:
+                files_desc += f"\n... and {len(file_list) - 10} more files"
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""\
+Please write a brief commit message in one line for the following changes:
+
+{files_desc}
+
+Example:
+🎉 [update] Add user authentication and database schema
+(you can use any emoji)
+
+You MUST directly respond with the commit message without any explanation, starting with the emoji.
+""",
+                    }
+                ],
+                max_tokens=128,
+                n=1,
+                temperature=0.5,
+                stream=False,
+            )
+            message = response.choices[0].message.content
+            if not message:
+                return f"chore update {len(files_info)} files"
+            return message
+        except Exception as e:
+            logger.error(f"AI batch commit failed: {e}, fallback to simple commit")
+            return f"chore update {len(files_info)} files"
+
 
 # ==================== 原有的工具函数 ====================
 commit_client = None
@@ -263,39 +377,96 @@ def is_textual_file(file_path: str, chunk_size: int = 2048) -> bool:
     return (non_text_count / len(chunk)) <= 0.30
 
 
-def collect_changes(repo: git.Repo):
-    """收集工作区变更，返回新增、修改、删除、未跟踪文件列表"""
-    added_files: list[str] = []
-    modified_files: list[str] = []
-    deleted_files: list[str] = []
-    untracked_files: list[str] = []
+def collect_changes(repo: git.Repo):  # 保留旧接口（向后兼容），仍返回合并列表
+    data = collect_changes_separated(repo)
+    # 合并 staged 与 unstaged，用于旧调用位置（如 ls 命令）
+    added = list(dict.fromkeys(data['staged']['added'] + data['unstaged']['added']))
+    modified = list(dict.fromkeys(data['staged']['modified'] + data['unstaged']['modified']))
+    deleted = list(dict.fromkeys(data['staged']['deleted'] + data['unstaged']['deleted']))
+    untracked = data['unstaged']['untracked']
+    return added, modified, deleted, untracked
 
-    # Untracked files
-    untracked_files.extend(repo.untracked_files)
 
-    # Modified files in the working tree
-    for item in repo.index.diff(None):
-        if item.change_type == "A":
-            added_files.append(item.a_path)
-        elif item.change_type == "M":
-            modified_files.append(item.a_path)
-        elif item.change_type == "D":
-            deleted_files.append(item.a_path)
+def collect_changes_separated(repo: git.Repo):
+    """收集变更并区分 staged 与 unstaged。
+
+    Returns:
+        {
+          'staged':   {'added': [], 'modified': [], 'deleted': []},
+          'unstaged': {'added': [], 'modified': [], 'deleted': [], 'untracked': []}
+        }
+    """
+    staged = {'added': [], 'modified': [], 'deleted': []}
+    unstaged = {'added': [], 'modified': [], 'deleted': [], 'untracked': []}
+
+    # 使用 GitPython 的结构化 diff：
+    # repo.index.diff(None)        -> 工作区(未暂存) 与 index 差异 (unstaged changes)
+    # repo.index.diff(repo.head.commit) -> index 与 HEAD 差异 (staged changes)
+
+    try:
+        diff_unstaged = repo.index.diff(None)
+    except Exception as e:
+        logger.warning(f"读取未暂存 diff 失败: {e}")
+        diff_unstaged = []
+    try:
+        # 与 HEAD 的差异即为已暂存变更（使用 INDEX 对比 HEAD，b_path 指向索引中的新路径）
+        diff_staged = repo.index.diff(repo.head.commit)
+    except Exception as e:
+        logger.warning(f"读取暂存区 diff 失败: {e}")
+        diff_staged = []
+
+    def _classify(diff_entry, bucket: dict, kind: str):
+        ct = diff_entry.change_type
+        # 优先使用 b_path（新路径），退回 a_path（旧路径）
+        new_path = getattr(diff_entry, 'b_path', None) or diff_entry.a_path
+        old_path = diff_entry.a_path
+        if ct == 'A':
+            bucket['added'].append(new_path)
+        elif ct == 'M':
+            bucket['modified'].append(new_path)
+        elif ct == 'D':
+            fs_path = Path(repo.working_tree_dir) / (old_path or new_path)
+            if kind == 'unstaged':
+                if fs_path.exists():
+                    bucket['modified'].append(new_path or old_path)
+                    logger.debug(f"{kind} diff D 但文件存在，视为修改: {new_path or old_path}")
+                else:
+                    bucket['deleted'].append(old_path or new_path)
+            else:  # staged
+                # 在 index.diff(HEAD) 时，新增文件可能表现为 D（index 有/HEAD 无）。若文件存在，则归为 added
+                if fs_path.exists():
+                    bucket['added'].append(new_path or old_path)
+                    logger.debug(f"staged diff D 但文件存在，视为新增: {new_path or old_path}")
+                else:
+                    bucket['deleted'].append(old_path or new_path)
+        elif ct == 'R':
+            bucket['modified'].append(new_path)
         else:
-            logger.warning(f"unknown change type: {item.change_type}")
+            bucket['modified'].append(new_path)
+            logger.debug(f"{kind} diff 未识别类型 {ct} -> 视为修改: {new_path}")
 
-    # Modified files in the index (staged)
-    for item in repo.index.diff(repo.head.commit):
-        if item.change_type == "A":
-            added_files.append(item.a_path)
-        elif item.change_type == "M":
-            modified_files.append(item.a_path)
-        elif item.change_type == "D":
-            deleted_files.append(item.a_path)
-        else:
-            logger.warning(f"unknown change type: {item.change_type}")
+    for d in diff_staged:
+        _classify(d, staged, 'staged')
+    for d in diff_unstaged:
+        _classify(d, unstaged, 'unstaged')
 
-    return added_files, modified_files, deleted_files, untracked_files
+    # 未跟踪文件
+    try:
+        unstaged['untracked'].extend(repo.untracked_files)
+    except Exception as e:
+        logger.warning(f"获取未跟踪文件失败: {e}")
+
+    # 去重保持顺序
+    def _dedup(seq: list[str]) -> list[str]:
+        return list(dict.fromkeys(seq))
+    for k in staged:
+        staged[k] = _dedup(staged[k])
+    for k in unstaged:
+        if k != 'untracked':
+            unstaged[k] = _dedup(unstaged[k])
+    unstaged['untracked'] = _dedup(unstaged['untracked'])
+
+    return {'staged': staged, 'unstaged': unstaged}
 
 
 def _auto_push_if_enabled(repo: git.Repo, enabled: bool):
@@ -476,10 +647,11 @@ def commit_file(
     action: Literal["add", "rm"],
     filepath: str,
     commit_date: datetime,
-    brief_desc: Optional[str] = None
+    brief_desc: Optional[str] = None,
+    skip_stage: bool = False,
 ):
     """执行单个文件的提交"""
-    committer.execute(action, filepath, commit_date, brief_desc)
+    committer.execute(action, filepath, commit_date, brief_desc, skip_stage=skip_stage)
 
 
 def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[datetime]:
@@ -528,6 +700,8 @@ def get_commit_dates(start_date: datetime, end_date: datetime, count) -> list[da
 def main(
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
     ls: Annotated[bool, typer.Option("--ls", help="列出当前工作区变更并编号")] = False,
+    multi_files: Annotated[bool, typer.Option("-m", "--multi-files", help="将所有文件合并为一个 commit")] = False,
+    staging: Annotated[bool, typer.Option("--staging/--no-staging", help="是否自动将未暂存变更加入暂存区",)] = True,
     ai: Annotated[Optional[bool], typer.Option("--ai/--no-ai", help="是否使用 AI 填写 commit 信息")] = None,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
@@ -537,8 +711,16 @@ def main(
     repo = git.Repo(repo_dir)
     index: git.IndexFile = repo.index
 
-    # Get the list of changed files
-    added_files, modified_files, deleted_files, untracked_files = collect_changes(repo)
+    # 分离获取变更
+    sep = collect_changes_separated(repo)
+    staged = sep['staged']
+    unstaged = sep['unstaged']
+
+    # 合并供展示
+    added_files = list(dict.fromkeys(staged['added'] + unstaged['added']))
+    modified_files = list(dict.fromkeys(staged['modified'] + unstaged['modified']))
+    deleted_files = list(dict.fromkeys(staged['deleted'] + unstaged['deleted']))
+    untracked_files = list(dict.fromkeys(unstaged['untracked']))
 
     # 只列出变更则直接打印并退出
     if ls:
@@ -569,12 +751,12 @@ def main(
     #     else:
     #         logger.warning(f"unknown status code: {status_code}")
 
-    files_count = (
-        len(added_files)
-        + len(modified_files)
-        + len(deleted_files)
-        + len(untracked_files)
-    )
+    # 真实提交文件数取决于 staging 策略
+    if staging:
+        files_count = (len(staged['added']) + len(staged['modified']) + len(staged['deleted']) +
+                       len(unstaged['added']) + len(unstaged['modified']) + len(unstaged['deleted']) + len(unstaged['untracked']))
+    else:
+        files_count = (len(staged['added']) + len(staged['modified']) + len(staged['deleted']))
     # 获取最新的提交日期
     latest_commit_date = repo.head.commit.committed_datetime
     today = datetime.now(latest_commit_date.tzinfo)
@@ -624,29 +806,71 @@ def main(
     else:
         committer = create_committer(index, config)
 
-    # 处理新增文件
-    for item in added_files:
-        commit_date = commit_dates.pop()
+    # 根据 staging 策略确定需要提交的文件集合
+    commit_added = []
+    commit_modified = []
+    commit_deleted = []
+    commit_untracked = []
+
+    if staging:
+        # 先暂存所有未暂存变更（保留 diff 内容用于 AI）
+        logger.info("staging 未暂存变更 ...")
+        # 生成描述后暂存
+        for path in unstaged['added'] + unstaged['modified']:
+            # 描述用于后续 AI，暂存动作在 batch/execute 中处理，这里不提前 add 以便 diff 可见
+            pass
+        # 删除文件直接 stage 删除
+        for path in unstaged['deleted']:
+            pass  # 删除的 diff 不用于 AI
+        # untracked 文件
+        for path in unstaged['untracked']:
+            pass
+        # 合并所有（提交时执行暂存动作）
+        commit_added = staged['added'] + unstaged['added'] + unstaged['modified'] + unstaged['untracked']
+        # modified 与 added 都统一 action=add 逻辑
+        commit_modified = []  # 已并入 commit_added
+        commit_deleted = staged['deleted'] + unstaged['deleted']
+    else:
+        # 仅提交已经暂存的变更
+        commit_added = staged['added'] + staged['modified']
+        commit_deleted = staged['deleted']
+        if not (commit_added or commit_deleted):
+            typer.secho("无已暂存变更。使用 --staging 以自动暂存并提交。", fg=colors.BRIGHT_BLACK)
+            return
+
+    # 批量提交模式
+    if multi_files:
+        files_info = []
+        # added (含 modified/untracked 合并) -> action add
+        for item in commit_added:
+            brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+            # 若该文件原本已 staged，跳过再次暂存
+            skip_stage = (item in staged['added'] or item in staged['modified']) and staging
+            files_info.append({"action": "add", "filepath": item, "brief_desc": brief_desc, "skip_stage": skip_stage})
+        for item in commit_deleted:
+            skip_stage = (item in staged['deleted']) and staging
+            files_info.append({"action": "rm", "filepath": item, "brief_desc": None, "skip_stage": skip_stage})
+
+        if commit_dates:
+            commit_date = commit_dates[-1]
+        else:
+            commit_date = datetime.now(latest_commit_date.tzinfo)
         logger.info(f"commit_date: {commit_date}")
-        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
-        commit_file(committer, "add", item, commit_date, brief_desc)
-    # 处理修改文件
-    for item in modified_files:
-        commit_date = commit_dates.pop()
-        logger.info(f"commit_date: {commit_date}")
-        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
-        commit_file(committer, "add", item, commit_date, brief_desc)
-    # 处理删除文件
-    for item in deleted_files:
-        commit_date = commit_dates.pop()
-        logger.info(f"commit_date: {commit_date}")
-        commit_file(committer, "rm", item, commit_date, None)
-    # 处理未跟踪文件
-    for item in untracked_files:
-        commit_date = commit_dates.pop()
-        logger.info(f"commit_date: {commit_date}")
-        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
-        commit_file(committer, "add", item, commit_date, brief_desc)
+        committer.execute_batch(files_info, commit_date)
+    else:
+        # 单文件提交模式（时间分布）
+        to_commit = [("add", f) for f in commit_added] + [("rm", f) for f in commit_deleted]
+        # 逆序日期列表与数量可能不匹配，防御
+        for action, path in to_commit:
+            if not commit_dates:
+                cd = datetime.now(latest_commit_date.tzinfo)
+            else:
+                cd = commit_dates.pop()
+            brief_desc = None
+            if action == "add" and isinstance(committer, AICommit):
+                brief_desc = get_brief_desc(index, "add", path)
+            skip_stage = staging and ((path in staged['added']) or (path in staged['modified']) or (path in staged['deleted']))
+            commit_file(committer, action, path, cd, brief_desc, skip_stage=skip_stage)
 
     # 自动推送（若开启）
     _auto_push_if_enabled(repo, config.get("auto_push", False))
@@ -667,6 +891,8 @@ def ls_cmd(
 def only_cmd(
     targets: Annotated[list[str], typer.Argument(help="一个或多个目标文件或目录路径，相对或绝对均可", metavar="TARGET...")],
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
+    multi_files: Annotated[bool, typer.Option("-m", "--multi-files", help="将所有文件合并为一个 commit")] = False,
+    staging: Annotated[bool, typer.Option("--staging/--no-staging", help="是否自动将未暂存变更加入暂存区",)] = True,
     ai: Annotated[Optional[bool], typer.Option("--ai/--no-ai", help="是否使用 AI 填写 commit 信息")] = None,
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
@@ -676,7 +902,54 @@ def only_cmd(
     index: git.IndexFile = repo.index
     repo_root = Path(repo.working_tree_dir)
 
-    added_files, modified_files, deleted_files, untracked_files = collect_changes(repo)
+    sep = collect_changes_separated(repo)
+    staged = sep['staged']
+    unstaged = sep['unstaged']
+
+    # 基于路径过滤分别处理
+    def _flt(lst: list[str], target: str) -> list[str]:
+        root = Path(repo.working_tree_dir).resolve()
+        in_path = Path(target)
+        if not in_path.is_absolute():
+            in_path = (root / in_path).resolve(strict=False)
+        else:
+            in_path = in_path.resolve(strict=False)
+        try:
+            rel = in_path.relative_to(root).as_posix()
+        except Exception:
+            rel = Path(target).as_posix()
+        is_dir = in_path.is_dir() or target.endswith(("/", "\\"))
+        out = []
+        for p in lst:
+            if is_dir:
+                if p == rel or p.startswith(rel.rstrip('/') + '/'):
+                    out.append(p)
+            else:
+                if p == rel:
+                    out.append(p)
+        return out
+
+    agg = {k: [] for k in ['staged_added','staged_modified','staged_deleted','unstaged_added','unstaged_modified','unstaged_deleted','unstaged_untracked']}
+    for t in targets:
+        agg['staged_added'] += _flt(staged['added'], t)
+        agg['staged_modified'] += _flt(staged['modified'], t)
+        agg['staged_deleted'] += _flt(staged['deleted'], t)
+        agg['unstaged_added'] += _flt(unstaged['added'], t)
+        agg['unstaged_modified'] += _flt(unstaged['modified'], t)
+        agg['unstaged_deleted'] += _flt(unstaged['deleted'], t)
+        agg['unstaged_untracked'] += _flt(unstaged['untracked'], t)
+
+    def _dedup(seq: list[str]) -> list[str]:
+        return list(dict.fromkeys(seq))
+
+    for k in agg:
+        agg[k] = _dedup(agg[k])
+
+    # 展示使用合并视图
+    added_files = agg['staged_added'] + agg['unstaged_added'] + agg['unstaged_modified']
+    modified_files = []  # 已并入 added_files
+    deleted_files = agg['staged_deleted'] + agg['unstaged_deleted']
+    untracked_files = agg['unstaged_untracked']
     # 参数校验
     if not targets:
         typer.secho("未提供任何目标路径。", fg=colors.RED)
@@ -718,9 +991,10 @@ def only_cmd(
     # 输出彩色列表
     print_changes_numbered(added_files, modified_files, deleted_files, untracked_files)
 
-    files_count = (
-        len(added_files) + len(modified_files) + len(deleted_files) + len(untracked_files)
-    )
+    if staging:
+        files_count = (len(added_files) + len(deleted_files) + len(untracked_files))
+    else:
+        files_count = (len(agg['staged_added']) + len(agg['staged_modified']) + len(agg['staged_deleted']))
     latest_commit_date = repo.head.commit.committed_datetime
     today = datetime.now(latest_commit_date.tzinfo)
     commit_dates = get_commit_dates(latest_commit_date, today, files_count)
@@ -742,22 +1016,46 @@ def only_cmd(
     else:
         committer = create_committer(index, config)
 
-    # 依序提交
-    for item in added_files:
-        commit_date = commit_dates.pop()
-        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
-        commit_file(committer, "add", item, commit_date, brief_desc)
-    for item in modified_files:
-        commit_date = commit_dates.pop()
-        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
-        commit_file(committer, "add", item, commit_date, brief_desc)
-    for item in deleted_files:
-        commit_date = commit_dates.pop()
-        commit_file(committer, "rm", item, commit_date, None)
-    for item in untracked_files:
-        commit_date = commit_dates.pop()
-        brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
-        commit_file(committer, "add", item, commit_date, brief_desc)
+    # 构造提交集合
+    if staging:
+        commit_added = added_files + untracked_files  # modified 已合并入 added_files
+        commit_deleted = deleted_files
+    else:
+        commit_added = agg['staged_added'] + agg['staged_modified']
+        commit_deleted = agg['staged_deleted']
+        if not (commit_added or commit_deleted):
+            typer.secho("目标路径下无已暂存变更。使用 --staging 以自动暂存。", fg=colors.BRIGHT_BLACK)
+            return
+
+    if multi_files:
+        files_info = []
+        for item in commit_added:
+            brief_desc = get_brief_desc(index, "add", item) if isinstance(committer, AICommit) else None
+            skip_stage = staging and (item in agg['staged_added'] or item in agg['staged_modified'])
+            files_info.append({"action": "add", "filepath": item, "brief_desc": brief_desc, "skip_stage": skip_stage})
+        for item in commit_deleted:
+            skip_stage = staging and (item in agg['staged_deleted'])
+            files_info.append({"action": "rm", "filepath": item, "brief_desc": None, "skip_stage": skip_stage})
+
+        if commit_dates:
+            commit_date = commit_dates[-1]
+        else:
+            latest_commit_date = repo.head.commit.committed_datetime
+            commit_date = datetime.now(latest_commit_date.tzinfo)
+        logger.info(f"commit_date: {commit_date}")
+        committer.execute_batch(files_info, commit_date)
+    else:
+        to_commit = [("add", f) for f in commit_added] + [("rm", f) for f in commit_deleted]
+        for action, path in to_commit:
+            if not commit_dates:
+                cd = datetime.now(repo.head.commit.committed_datetime.tzinfo)
+            else:
+                cd = commit_dates.pop()
+            brief_desc = None
+            if action == "add" and isinstance(committer, AICommit):
+                brief_desc = get_brief_desc(index, "add", path)
+            skip_stage = staging and ((path in agg['staged_added']) or (path in agg['staged_modified']) or (path in agg['staged_deleted']))
+            commit_file(committer, action, path, cd, brief_desc, skip_stage=skip_stage)
 
     # 自动推送（若开启）
     _auto_push_if_enabled(repo, config.get("auto_push", False))
