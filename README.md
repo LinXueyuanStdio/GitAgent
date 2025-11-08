@@ -11,10 +11,33 @@
 
 ## 📦 安装
 
-一行命令搞定：
+```bash
+pip install oh-my-git-agent --upgrade
+```
+
+最佳实践：
 
 ```bash
+# 1. 安装
 pip install oh-my-git-agent
+
+# 2. 进入你的 Git 仓库
+cd /path/to/your/repo
+
+# 3. 配置（可选，推荐使用 DeepSeek，性价比高）
+gcli config --api-key sk-your-deepseek-key --auto-push
+
+# 4. 运行（第一次建议先看看变更）
+gcli ls
+
+# 5. 一键提交
+# 5.1 指定变更，一个 commit
+gcli only src/ tests/ --multi-files
+# 5.2 提交所有变更，每个文件一个 commit
+gcli
+# 5.3 手动添加文件到暂存区，再提交一个 commit
+git add src/main.py README.md  # 你可以在可视化工具中操作
+gcli --no-staging -m
 ```
 
 ---
@@ -176,6 +199,32 @@ gcli config --show
 3. 环境变量：`.env` 文件（优先 `GITAGENT_OPENAI_API_KEY`、`GITAGENT_OPENAI_BASE_URL`、`GITAGENT_OPENAI_MODEL`，兼容 `OPENAI_*`）
 4. 全局配置：`~/.oh-my-git-agent/config.yaml`
 
+
+## 场景 6️⃣：合并多个文件为一个提交（新增 -m/--multi-files 参数）
+
+有时候你可能希望将多个文件的变更合并为一个提交，而不是每个文件单独提交。现在你可以使用 `-m/--multi-files` 参数来实现这一点。
+
+```bash
+# 将所有变更文件合并为一个 commit
+gcli -m
+gcli only src/ -m
+# 或
+gcli --multi-files
+gcli only src/ --multi-files
+```
+
+## 场景 7️⃣：手动添加文件到暂存区，再使用 GitAgent 提交
+
+你也可以先使用 `git add <file>` 手动将文件添加到暂存区，然后使用 GitAgent 提交这些已暂存的文件。
+
+```bash
+# 手动添加文件到暂存区
+git add src/main.py README.md
+# 使用 GitAgent 提交已暂存的文件。
+# 以下指令会忽略工作区的其他变更，只 commit 暂存区的文件，生成一个 commit message。
+gcli --no-staging -m
+```
+
 ---
 
 ## 💡 使用技巧
@@ -311,6 +360,8 @@ source ~/.zshrc  # 或 ~/.bashrc
 | `--base-url` | 指定 API 地址 | `gcli --base-url https://...` |
 | `--model` | 指定模型 | `gcli --model gpt-4o-mini` |
 | `--repo-dir` | 指定仓库路径 | `gcli --repo-dir ~/myrepo` |
+| `-m/--multi-files` | 多文件合并为一个提交 | `gcli -m` |
+| `--no-staging` | 只提交已暂存文件 | `gcli --no-staging` |
 
 ---
 
@@ -320,25 +371,5 @@ source ~/.zshrc  # 或 ~/.bashrc
 - 💻 **GitHub**: [LinXueyuanStdio/GitAgent](https://github.com/LinXueyuanStdio/GitAgent)
 - 📝 **License**: MIT
 
----
-
-## 🎉 开始使用
-
-```bash
-# 1. 安装
-pip install oh-my-git-agent
-
-# 2. 进入你的 Git 仓库
-cd /path/to/your/repo
-
-# 3. 运行（第一次建议先看看变更）
-gcli ls
-
-# 4. 开始提交
-gcli --api-key sk-your-deepseek-key
-
-# 5. 推送
-git push
-```
 
 **祝你提交愉快！** 🚀✨
