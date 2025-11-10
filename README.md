@@ -37,7 +37,7 @@ gcli only src/ tests/ --one-commit
 gcli
 # 5.3 手动添加文件到暂存区，再提交一个 commit
 git add src/main.py README.md  # 你可以在可视化工具中操作
-gcli --no-staging -m
+gcli --no-staging --one-commit
 ```
 
 ---
