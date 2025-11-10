@@ -1186,5 +1186,104 @@ def cli_wrapper():
     cli()
 
 
+# ==================== 版本信息 ====================
+def _read_version_from_pyproject(pyproject_path: Path) -> Optional[str]:
+    """从给定 pyproject.toml 路径解析版本号。
+
+    解析顺序：
+    1) 使用 tomllib/tomli 严格解析
+    2) 回退到正则匹配 [tool.poetry] 下的 version 字段
+    """
+    try:
+        if pyproject_path.exists():
+            try:
+                # Python 3.11+
+                import tomllib  # type: ignore
+                data = tomllib.loads(pyproject_path.read_bytes())
+                v = (
+                    data.get('tool', {})
+                    .get('poetry', {})
+                    .get('version')
+                )
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+            except ImportError:
+                try:
+                    import tomli  # type: ignore
+                    data = tomli.loads(pyproject_path.read_text(encoding='utf-8'))
+                    v = (
+                        data.get('tool', {})
+                        .get('poetry', {})
+                        .get('version')
+                    )
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+                except Exception:
+                    pass
+            except Exception:
+                # toml 解析失败时回退到正则
+                pass
+
+            # 简单正则回退：优先匹配 [tool.poetry] 区块内的 version
+            try:
+                import re
+                text = pyproject_path.read_text(encoding='utf-8', errors='ignore')
+                # 限定在 [tool.poetry] 段落中查找 version
+                m_block = re.search(r"\[tool\.poetry\](.*?)(\n\[|\Z)", text, re.S)
+                scope = m_block.group(1) if m_block else text
+                m = re.search(r"^\s*version\s*=\s*['\"]([^'\"]+)['\"]\s*$", scope, re.M)
+                if m:
+                    return m.group(1).strip()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
+
+
+def get_version() -> str:
+    """获取当前程序版本号。
+
+    优先从已安装分发中读取；若不可用，则尝试读取工程根目录的 pyproject.toml；再退回到脚本同级目录。
+    """
+    # 1) 已安装环境（更稳健）
+    try:
+        try:
+            from importlib import metadata as _ilm  # py3.8+
+        except Exception:
+            import importlib_metadata as _ilm  # type: ignore
+        v = _ilm.version("oh-my-git-agent")
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    except Exception:
+        pass
+
+    # 2) 尝试工程根目录（当前工作目录）
+    cwd_pyproject = Path.cwd() / "pyproject.toml"
+    v = _read_version_from_pyproject(cwd_pyproject)
+    if v:
+        return v
+
+    # 3) 脚本所在目录（开发场景）
+    here_pyproject = Path(__file__).resolve().parent / "pyproject.toml"
+    v = _read_version_from_pyproject(here_pyproject)
+    if v:
+        return v
+
+    # 4) 回退默认
+    return "0.0.0"
+
+
+@cli.command("version", help="显示版本信息")
+def version_cmd(
+    short: Annotated[bool, typer.Option("--short", help="仅输出纯版本号，不带名称")] = False,
+):
+    v = get_version()
+    if short:
+        typer.echo(v)
+    else:
+        typer.secho(f"oh-my-git-agent v{v}", fg=colors.BRIGHT_BLUE, bold=True)
+
+
 if __name__ == "__main__":
     cli_wrapper()
