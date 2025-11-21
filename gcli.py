@@ -117,6 +117,40 @@ class ConfigManager:
         print(f"配置已保存到{scope}配置文件: {config_file}")
 
 
+def _find_git_root(start_path: Path) -> Optional[Path]:
+    """向父级追溯寻找 .git 目录，返回仓库根目录路径。"""
+    current = start_path
+    if current.is_file():
+        current = current.parent
+
+    while True:
+        git_dir = current / ".git"
+        if git_dir.exists():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def resolve_repo_directory(repo_dir: str) -> tuple[Path, Path]:
+    """解析 repo_dir，并在需要时上溯到 git 根目录。
+
+    Returns:
+        (resolved_repo_dir, user_cwd)
+    """
+    user_cwd = Path.cwd().resolve()
+    target = Path(repo_dir)
+    if not target.is_absolute():
+        target = (user_cwd / target).resolve()
+    else:
+        target = target.resolve()
+
+    git_root = _find_git_root(target)
+    if git_root:
+        return git_root, user_cwd
+    return target, user_cwd
+
+
 # ==================== Commit 抽象类 ====================
 class BaseCommit(ABC):
     """Commit 基类"""
@@ -548,13 +582,15 @@ def _filter_changes_by_path(
     modified_files: list[str],
     deleted_files: list[str],
     untracked_files: list[str],
+    base_dir: Optional[Path] = None,
 ):
     """按给定路径过滤变更（文件精确匹配；目录为前缀匹配）"""
     # 规范化路径并转换为相对仓库根目录的 POSIX 路径
     root = repo_root.resolve()
+    base = (base_dir or Path.cwd()).resolve()
     in_path = Path(target_path)
     if not in_path.is_absolute():
-        in_path = (root / in_path).resolve(strict=False)
+        in_path = (base / in_path).resolve(strict=False)
     else:
         in_path = in_path.resolve(strict=False)
 
@@ -707,8 +743,13 @@ def main(
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
     model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
 ):
-    logger.info(f"repo_dir: {Path(repo_dir).absolute()}")
-    repo = git.Repo(repo_dir)
+    resolved_repo_dir, _ = resolve_repo_directory(repo_dir)
+    original_repo_dir = Path(repo_dir).resolve()
+    if original_repo_dir != resolved_repo_dir:
+        logger.info(f"repo_dir: {resolved_repo_dir} (from {original_repo_dir})")
+    else:
+        logger.info(f"repo_dir: {resolved_repo_dir}")
+    repo = git.Repo(resolved_repo_dir)
     index: git.IndexFile = repo.index
 
     # 分离获取变更
@@ -882,7 +923,11 @@ def main(
 def ls_cmd(
     repo_dir: Annotated[str, typer.Option(help="git 仓库目录")] = ".",
 ):
-    repo = git.Repo(repo_dir)
+    resolved_repo_dir, _ = resolve_repo_directory(repo_dir)
+    original_repo_dir = Path(repo_dir).resolve()
+    if original_repo_dir != resolved_repo_dir:
+        logger.info(f"repo_dir: {resolved_repo_dir} (from {original_repo_dir})")
+    repo = git.Repo(resolved_repo_dir)
     added_files, modified_files, deleted_files, untracked_files = collect_changes(repo)
     print_changes_numbered(added_files, modified_files, deleted_files, untracked_files)
 
@@ -898,9 +943,15 @@ def only_cmd(
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
     model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
 ):
-    repo = git.Repo(repo_dir)
+    resolved_repo_dir, user_cwd = resolve_repo_directory(repo_dir)
+    original_repo_dir = Path(repo_dir).resolve()
+    if original_repo_dir != resolved_repo_dir:
+        logger.info(f"repo_dir: {resolved_repo_dir} (from {original_repo_dir})")
+    repo = git.Repo(resolved_repo_dir)
     index: git.IndexFile = repo.index
     repo_root = Path(repo.working_tree_dir)
+    root_path = repo_root.resolve()
+    base_dir = user_cwd
 
     sep = collect_changes_separated(repo)
     staged = sep['staged']
@@ -908,14 +959,13 @@ def only_cmd(
 
     # 基于路径过滤分别处理
     def _flt(lst: list[str], target: str) -> list[str]:
-        root = Path(repo.working_tree_dir).resolve()
         in_path = Path(target)
         if not in_path.is_absolute():
-            in_path = (root / in_path).resolve(strict=False)
+            in_path = (base_dir / in_path).resolve(strict=False)
         else:
             in_path = in_path.resolve(strict=False)
         try:
-            rel = in_path.relative_to(root).as_posix()
+            rel = in_path.relative_to(root_path).as_posix()
         except Exception:
             rel = Path(target).as_posix()
         is_dir = in_path.is_dir() or target.endswith(("/", "\\"))
@@ -963,7 +1013,7 @@ def only_cmd(
 
     for target in targets:
         fa, fm, fd, fu = _filter_changes_by_path(
-            repo_root, target, added_files, modified_files, deleted_files, untracked_files
+            repo_root, target, added_files, modified_files, deleted_files, untracked_files, base_dir=base_dir
         )
         agg_added.extend(fa)
         agg_modified.extend(fm)
