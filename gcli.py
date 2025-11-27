@@ -529,6 +529,13 @@ def _auto_push_if_enabled(repo: git.Repo, enabled: bool):
         logger.error(f"自动推送失败: {e}")
 
 
+def resolve_auto_push(config: dict, cli_push: Optional[bool]) -> bool:
+    """Resolve whether this run should push after committing."""
+    if cli_push is not None:
+        return cli_push
+    return bool(config.get("auto_push", False))
+
+
 def print_changes_numbered(
     added_files: list[str],
     modified_files: list[str],
@@ -742,6 +749,7 @@ def main(
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
     model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
+    push: Annotated[Optional[bool], typer.Option("--push/--no-push", help="是否在提交后自动执行 git push origin <当前分支>，覆盖配置但不保存")] = None,
 ):
     resolved_repo_dir, _ = resolve_repo_directory(repo_dir)
     original_repo_dir = Path(repo_dir).resolve()
@@ -914,7 +922,7 @@ def main(
             commit_file(committer, action, path, cd, brief_desc, skip_stage=skip_stage)
 
     # 自动推送（若开启）
-    _auto_push_if_enabled(repo, config.get("auto_push", False))
+    _auto_push_if_enabled(repo, resolve_auto_push(config, push))
 
     logger.info("Everything done!")
 
@@ -942,6 +950,7 @@ def only_cmd(
     api_key: Annotated[str, typer.Option(help="OpenAI API Key")] = None,
     base_url: Annotated[str, typer.Option(help="OpenAI API URL")] = "https://api.deepseek.com",
     model: Annotated[str, typer.Option(help="OpenAI Model")] = "deepseek-chat",
+    push: Annotated[Optional[bool], typer.Option("--push/--no-push", help="是否在提交后自动执行 git push origin <当前分支>，覆盖配置但不保存")] = None,
 ):
     resolved_repo_dir, user_cwd = resolve_repo_directory(repo_dir)
     original_repo_dir = Path(repo_dir).resolve()
@@ -1108,7 +1117,7 @@ def only_cmd(
             commit_file(committer, action, path, cd, brief_desc, skip_stage=skip_stage)
 
     # 自动推送（若开启）
-    _auto_push_if_enabled(repo, config.get("auto_push", False))
+    _auto_push_if_enabled(repo, resolve_auto_push(config, push))
 
     logger.info("Selected changes committed. ✅")
 
